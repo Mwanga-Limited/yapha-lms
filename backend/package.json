@@ -1,0 +1,38 @@
+{
+  "name": "elearning-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "E-Learning Platform API (Node.js + Express + PostgreSQL)",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "migrate": "node src/scripts/migrate.js",
+    "seed:admin": "node src/scripts/seed-admin.js",
+    "seed:demo": "node src/scripts/seed-demo.js",
+    "test": "node --test --test-concurrency=1 --test-reporter=spec test/*.test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "google-auth-library": "^11.3.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.5.0",
+    "nodemailer": "^10.2.1",
+    "otplib": "^12.0.1",
+    "pdfkit": "^0.20.2",
+    "pg": "^8.23.1",
+    "qrcode": "^1.5.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "supertest": "^7.3.1"
+  }
+}
