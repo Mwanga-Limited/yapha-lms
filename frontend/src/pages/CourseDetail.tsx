@@ -54,9 +54,10 @@ export function CourseDetail() {
           </ul>
           {course.status !== 'published' && <p><StatusBadge status={course.status} /> <span className="muted">This course is not in the catalog.</span></p>}
           <div className="detail-cta">
-            {viewer.enrolled ? (
+             {viewer.enrolled && user?.role === 'student' ? (
               <Link className="btn btn-primary btn-lg" to={`/learn/${id}`}>{viewer.completed ? 'Review the course' : 'Continue learning'}</Link>
-            ) : course.status === 'published' && !viewer.canManage ? (
+             
+                ) : course.status === 'published' && !viewer.canManage && (!user || user.role === 'student') ? (
               <Button className="btn-lg" busy={busy} onClick={enrol} disabled={!!user && !user.emailVerified}>Enrol for free</Button>
             ) : null}
             {viewer.canManage && <Link className="btn btn-secondary" to={user?.id === course.teacherId ? `/teach/courses/${id}` : `/admin/courses/${id}`}>Manage course</Link>}

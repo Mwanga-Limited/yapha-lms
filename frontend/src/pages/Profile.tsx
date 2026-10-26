@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { api, upload, type User } from '../api';
 import { useAuth } from '../auth';
 import { Alert, Button, Field, TextArea, useAction, useDocumentTitle } from '../ui';
@@ -34,7 +35,7 @@ function ProfileForm() {
           {photo && <span className="muted small">Save to keep this photo</span>}
         </div>
       </div>
-      <Field label="Full name" hint="Printed on your certificates exactly as written here." value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required />
+      <Field label="Full name" hint={user!.role === 'student' ? 'Printed on your certificates exactly as written here.' : 'Shown to learners on your course pages.'} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required />
       <Field label="Email" value={user!.email} disabled hint={user!.emailVerified ? 'Verified' : 'Not verified yet'} />
       <Field label="Phone number" type="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="+234 801 234 5678" />
       {user!.role !== 'student' && <TextArea label="Bio" hint="Shown to learners on your course pages." rows={4} value={f.bio} onChange={(e) => setF({ ...f, bio: e.target.value })} />}
@@ -114,7 +115,7 @@ export function Profile() {
   const { user } = useAuth();
   return (
     <>
-      <div className="page-head"><h1>Your account</h1><p className="muted">Signed in as {user!.email} · {user!.role}{user!.isRoot ? ' (first admin)' : ''}</p></div>
+      <div className="page-head"><h1>Your account</h1><p className="muted">Signed in as {user!.email} · {user!.role}{user!.isRoot ? ' (first admin)' : ''}</p>{user!.role === 'student' && <p className="small">Want to teach on Learn? <Link to="/teach">Apply to become a teacher</Link></p>}</div>
       <div className="two-col">
         <ProfileForm />
         <div className="stack">

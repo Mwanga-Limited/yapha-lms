@@ -53,8 +53,9 @@ export async function checkCompletion(db, ctx, enrollment, course) {
   const progress = computeProgress(course.live_content, state.completed, state.passed);
   if (!progress.ruleMet) return null;
 
-  await db.query(`UPDATE enrollments SET completed_at = now() WHERE id = $1`, [enrollment.id]);
   const { rows: [learner] } = await db.query(`SELECT * FROM users WHERE id = $1`, [enrollment.user_id]);
+  if (learner.role !== 'student') return null;
+  await db.query(`UPDATE enrollments SET completed_at = now() WHERE id = $1`, [enrollment.id]);
   let cert = null;
   for (let i = 0; i < 5 && !cert; i++) {
     const { rows } = await db.query(

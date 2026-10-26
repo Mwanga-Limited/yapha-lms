@@ -138,7 +138,7 @@ export const accountRoutes = actionEndpoint({
 
   /** Learner dashboard: my courses, progress, resume point, certificates. */
   dashboard: {
-    auth: 'user',
+    auth: 'student',
     run: async (ctx) => {
       const { rows } = await query(
         `SELECT e.id AS enrollment_id, e.enrolled_at, e.completed_at, e.last_item_id, e.last_accessed_at,

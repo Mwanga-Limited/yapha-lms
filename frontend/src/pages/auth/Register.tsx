@@ -44,7 +44,7 @@ export function Register() {
             <span><strong>Teach</strong><small>Apply to publish your own courses</small></span>
           </label>
         </fieldset>
-        <Field label="Full name" hint="This name is printed on your certificates." value={f.name} onChange={set('name')} required autoComplete="name" />
+        <Field label="Full name" hint={joinAs === 'student' ? 'This name is printed on your certificates.' : 'Shown to learners on your course pages.'} value={f.name} onChange={set('name')} required autoComplete="name" />
         <Field label="Email" type="email" value={f.email} onChange={set('email')} required autoComplete="email" />
         <Field label="Password" type="password" value={f.password} onChange={set('password')} required minLength={8} autoComplete="new-password"
           hint="At least 8 characters, with letters and numbers." />

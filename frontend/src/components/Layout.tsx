@@ -83,8 +83,8 @@ export function Layout() {
   useEffect(() => setMenu(false), [loc.pathname]);
 
   const links: { to: string; label: string; end?: boolean }[] = [{ to: '/', label: 'Courses', end: true }];
-  if (user) links.push({ to: '/dashboard', label: 'My learning' });
-  if (user && user.role !== 'admin') links.push({ to: '/teach', label: 'Teach' });
+  if (user?.role === 'student') links.push({ to: '/dashboard', label: 'My learning' });
+  if (user?.role === 'teacher') links.push({ to: '/teach', label: 'My courses' });
   if (user?.role === 'admin') links.push({ to: '/teach', label: 'My courses' }, { to: '/admin', label: 'Admin' });
 
   return (
@@ -98,7 +98,7 @@ export function Layout() {
           <button className="icon-btn menu-btn" aria-label="Menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>☰</button>
           <nav className={`mainnav ${menu ? 'open' : ''}`} aria-label="Main">
             {links.map((l) => <NavLink key={l.to + l.label} to={l.to} end={l.end}>{l.label}</NavLink>)}
-            <NavLink to="/verify">Verify a certificate</NavLink>
+            {!user && <NavLink to="/verify">Verify a certificate</NavLink>}
             {!user && <NavLink to="/login" className="nav-cta-ghost">Sign in</NavLink>}
             {!user && <NavLink to="/register" className="nav-cta">Create account</NavLink>}
             {user && (
@@ -119,7 +119,7 @@ export function Layout() {
         <Outlet />
       </main>
       <footer className="footer">
-        <div className="wrap">Learn · courses, quizzes and certificates you can verify.</div>
+        <div className="wrap">Learn · courses, quizzes and certificates you can verify. <Link to="/verify">Verify a certificate</Link></div>
       </footer>
     </>
   );

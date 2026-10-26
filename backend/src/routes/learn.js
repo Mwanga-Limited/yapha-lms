@@ -45,6 +45,7 @@ export const learnRoutes = actionEndpoint({
     verified: true,
     schema: z.object({ courseId: id }),
     run: async (ctx) => tx(async (db) => {
+      if (ctx.user.role !== 'student') fail(403, 'Only student accounts can enrol in courses.', { code: 'STUDENTS_ONLY' });
       const { rows: [c] } = await db.query(`SELECT * FROM courses WHERE id = $1`, [ctx.data.courseId]);
       if (!c) notFound('Course');
       if (c.status !== 'published') fail(409, 'This course is not open for enrolment');
@@ -63,7 +64,7 @@ export const learnRoutes = actionEndpoint({
 
   /** Course player shell: outline with per-item progress, resume point, certificate. */
   player: {
-    auth: 'user',
+    auth: 'student',
     schema: z.object({ courseId: id }),
     run: async (ctx) => {
       const db = { query };
@@ -90,7 +91,7 @@ export const learnRoutes = actionEndpoint({
   },
 
   lesson: {
-    auth: 'user',
+    auth: 'student',
     schema: z.object({ courseId: id, lessonId: itemRef }),
     run: async (ctx) => {
       const db = { query };
@@ -104,7 +105,7 @@ export const learnRoutes = actionEndpoint({
   },
 
   savePosition: {
-    auth: 'user',
+    auth: 'student',
     schema: z.object({ courseId: id, lessonId: itemRef, positionSec: z.number().min(0).max(1e7) }),
     run: async (ctx) => {
       const db = { query };
@@ -119,7 +120,7 @@ export const learnRoutes = actionEndpoint({
   },
 
   completeLesson: {
-    auth: 'user',
+    auth: 'student',
     schema: z.object({ courseId: id, lessonId: itemRef }),
     run: async (ctx) => tx(async (db) => {
       const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId, true);
@@ -137,7 +138,7 @@ export const learnRoutes = actionEndpoint({
   },
 
   quiz: {
-    auth: 'user',
+    auth: 'student',
     schema: z.object({ courseId: id, quizId: itemRef }),
     run: async (ctx) => {
       const db = { query };
@@ -155,7 +156,7 @@ export const learnRoutes = actionEndpoint({
 
   /** QZ-01/QZ-02: 70% pass mark, 3 attempts, then a 24h lock followed by 3 more attempts. */
   submitQuiz: {
-    auth: 'user',
+    auth: 'student',
     schema: z.object({ courseId: id, quizId: itemRef, answers: z.record(z.string(), z.array(z.string().max(64)).max(10)) }),
     run: async (ctx) => tx(async (db) => {
       const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId, true);

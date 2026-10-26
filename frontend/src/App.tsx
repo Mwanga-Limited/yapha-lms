@@ -39,7 +39,7 @@ export function App() {
         <Route path="verify" element={<VerifyCertificate />} />
         <Route path="verify/:code" element={<VerifyCertificate />} />
 
-        <Route path="dashboard" element={<Guard><Dashboard /></Guard>} />
+       <Route path="dashboard" element={<Guard roles={['student']}><Dashboard /></Guard>} />
         <Route path="profile" element={<Guard><Profile /></Guard>} />
         <Route path="notifications" element={<Guard><Notifications /></Guard>} />
 
@@ -57,7 +57,7 @@ export function App() {
         <Route path="*" element={<Empty title="This page does not exist"><Link to="/">Browse courses</Link></Empty>} />
       </Route>
       {/* The course player uses the full screen */}
-      <Route path="learn/:courseId" element={<Guard><Player /></Guard>} />
+      <Route path="learn/:courseId" element={<Guard roles={['student']}><Player /></Guard>} />
     </Routes>
   );
 }
