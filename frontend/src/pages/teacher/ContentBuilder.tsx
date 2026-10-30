@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { newId, upload, type Content, type Item, type LessonItem, type LessonType, type Question, type QuizItem } from '../../api';
+import { useTenant } from '../../auth';
 import { Button, Field, Select, TextArea, useAction } from '../../ui';
 
 type Mutate = (fn: (c: Content) => void) => void;
@@ -112,6 +113,7 @@ function FilePick({ busy, accept, name, onPick, onClear, label }: { busy: boolea
 function ItemEditor({ it, si, ii, count, mutate, open, toggle, required }: {
   it: Item; si: number; ii: number; count: number; mutate: Mutate; open: boolean; toggle: () => void; required: boolean;
 }) {
+  const tenant = useTenant();
   const setItem = (fn: (x: Item) => void) => mutate((c) => fn(c.sections[si].items[ii]));
   const setRequired = (on: boolean) => mutate((c) => {
     const key = it.kind === 'lesson' ? 'lessons' : 'quizzes';
@@ -139,7 +141,7 @@ function ItemEditor({ it, si, ii, count, mutate, open, toggle, required }: {
             : (
               <>
                 <TextArea label="Instructions (optional)" rows={2} value={it.description} onChange={(e) => setItem((x) => { (x as QuizItem).description = e.target.value; })} />
-                <p className="muted small">Auto-graded. Learners need 70% to pass and get 3 attempts, then the quiz locks for 24 hours.</p>
+                <p className="muted small">Auto-graded. In {tenant.name}, learners need {tenant.quiz.passMark}% to pass and get {tenant.quiz.maxAttempts} {tenant.quiz.maxAttempts === 1 ? 'attempt' : 'attempts'}, then the quiz locks for {tenant.quiz.lockHours} hours.</p>
                 {it.questions.map((q, qi) => (
                   <QuestionEditor key={q.id} q={q} n={qi + 1}
                     update={(fn) => setItem((x) => fn((x as QuizItem).questions[qi]))}

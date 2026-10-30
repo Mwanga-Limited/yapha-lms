@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { api } from '../../api';
+import { api, apiUrl } from '../../api';
 import { useAuth } from '../../auth';
 import { Thumb } from '../../components/CourseCard';
 import { Empty, ErrorState, Loading, ProgressBar, fmtDate, useDocumentTitle, useLoad } from '../../ui';
@@ -24,7 +24,8 @@ export function Dashboard() {
   return (
     <>
       <div className="page-head">
-        <h1>Welcome , {user?.name.split(' ')[0]}</h1>
+        {/* New learners (no courses yet) get "Welcome"; returning learners get "Welcome back" */}
+        <h1>{courses.length > 0 ? 'Welcome back' : 'Welcome'}, {user?.name.split(' ')[0]}</h1>
       </div>
       {loading && <Loading />}
       {error ? <ErrorState error={error} onRetry={reload} /> : null}
@@ -84,7 +85,7 @@ export function Dashboard() {
                 </div>
                 {c.certificate && !c.certificate.revoked && (
                   <div className="row-gap">
-                    <a className="btn btn-primary btn-sm" href={`/api/certificates/${c.certificate.code}?format=pdf&download`}>Download PDF</a>
+                    <a className="btn btn-primary btn-sm" href={apiUrl(`/certificates/${c.certificate.code}?format=pdf&download`)}>Download PDF</a>
                     <Link className="btn btn-secondary btn-sm" to={`/verify/${c.certificate.code}`}>Share link</Link>
                   </div>
                 )}

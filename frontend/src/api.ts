@@ -1,12 +1,37 @@
-// Thin client for the backend's action endpoints: POST /api/<endpoint> { action, data }.
+// Thin client for the backend's action endpoints: POST /api/t/<organisation>/<endpoint> { action, data },
+// and POST /api/platform { action, data } for the super admin console.
 
-export type Role = 'student' | 'teacher' | 'admin';
+/** The organisation this page belongs to (from the /t/<slug> part of the address). */
+let tenantSlug: string | null = null;
+export const setTenantSlug = (slug: string | null) => { tenantSlug = slug; };
+export const getTenantSlug = () => tenantSlug;
+/** Build an API URL inside the current organisation, e.g. apiUrl('/certificates/EL-...'). */
+export const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
+
+export type Role = 'student' | 'teacher' | 'admin' | 'superadmin';
 export type Endpoint = 'auth' | 'account' | 'courses' | 'learn' | 'admin';
 
 export interface User {
   id: string; email: string; name: string; phone: string | null; bio: string | null; expertise: string | null;
   photoUrl: string | null; role: Role; isRoot: boolean; emailVerified: boolean; totpEnabled: boolean;
   hasPassword: boolean; googleLinked: boolean; createdAt: string;
+  isSuper: boolean; memberCode: string | null; tenantId: string | null;
+}
+
+export interface TenantSettings {
+  branding: { displayName: string; logoFileId: string | null; accentColor: string };
+  quiz: { passMark: number; maxAttempts: number; lockHours: number };
+  access: { signup: 'open' | 'invite'; allowedDomains: string[] };
+  auth: { google: boolean; studentMfa: boolean };
+}
+
+/** What every page of an organisation knows about it (public, no secrets). */
+export interface TenantInfo {
+  id: string; slug: string; name: string; legalName: string; status: 'active' | 'suspended';
+  branding: { accentColor: string; logoUrl: string | null };
+  quiz: TenantSettings['quiz'];
+  access: TenantSettings['access'];
+  auth: TenantSettings['auth'];
 }
 
 export type CourseStatus = 'draft' | 'in_review' | 'rejected' | 'approved' | 'published' | 'unpublished' | 'archived';
@@ -74,21 +99,31 @@ async function request<T>(url: string, init: RequestInit): Promise<T> {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function api<T = any>(endpoint: Endpoint, action: string, data: unknown = {}): Promise<T> {
-  return request<T>(`/api/${endpoint}`, {
+  return request<T>(apiUrl(`/${endpoint}`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, data }),
   });
 }
 
-export type UploadPurpose = 'photo' | 'thumbnail' | 'lesson_file' | 'lesson_video';
+/** Super admin console: POST /api/platform { action, data }. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function platformApi<T = any>(action: string, data: unknown = {}): Promise<T> {
+  return request<T>('/api/platform', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, data }),
+  });
+}
+
+export type UploadPurpose = 'photo' | 'thumbnail' | 'lesson_file' | 'lesson_video' | 'logo';
 export interface UploadedFile { id: string; name: string; size: number; mime: string; url: string | null }
 
 export async function upload(file: File, purpose: UploadPurpose): Promise<UploadedFile> {
   const form = new FormData();
   form.append('purpose', purpose);
   form.append('file', file);
-  const r = await request<{ file: UploadedFile }>('/api/upload', { method: 'POST', body: form });
+  const r = await request<{ file: UploadedFile }>(apiUrl('/upload'), { method: 'POST', body: form });
   return r.file;
 }
 

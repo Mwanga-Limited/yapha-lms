@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api, errorMessage, type User } from '../../api';
-import { homeFor, useAuth } from '../../auth';
-import { GoogleButton } from '../../components/GoogleButton';
+import { homeFor, useAuth, useTenant } from '../../auth';
+import { GoogleOption } from '../../components/GoogleButton';
 import { Alert, Button, Field, useDocumentTitle } from '../../ui';
 
 type Mfa = { token: string; method: 'totp' | 'email'; emailHint: string | null };
@@ -11,6 +11,7 @@ type LoginResult = { user?: User; mfa?: Mfa };
 export function Login() {
   useDocumentTitle('Sign in');
   const { setUser, googleClientId } = useAuth();
+  const tenant = useTenant();
   const nav = useNavigate();
   const from = (useLocation().state as { from?: string } | null)?.from;
   const [email, setEmail] = useState('');
@@ -65,7 +66,7 @@ export function Login() {
 
   return (
     <div className="auth-card">
-      <h1>Sign in</h1>
+      <h1>Sign in to {tenant.name}</h1>
       <p className="muted">Pick up where you left off.</p>
       {error && <Alert tone="error">{error}</Alert>}
       <form onSubmit={submit}>
@@ -74,13 +75,15 @@ export function Login() {
         <div className="row-between"><span /><Link to="/forgot-password">Forgot your password?</Link></div>
         <Button type="submit" busy={busy} className="btn-block">Sign in</Button>
       </form>
-      {googleClientId && (
+      {tenant.auth.google && (
         <>
           <div className="or"><span>or</span></div>
-          <GoogleButton clientId={googleClientId} onCredential={(credential) => attempt(() => api('auth', 'google', { credential }))} />
+          <GoogleOption allowed clientId={googleClientId} label="Sign in with Google" onCredential={(credential) => attempt(() => api('auth', 'google', { credential }))} />
         </>
       )}
-      <p className="auth-foot">New here? <Link to="/register">Create an account</Link></p>
+      <p className="auth-foot">{tenant.access.signup === 'invite'
+        ? <>Need an account? {tenant.name} is invite-only: ask an administrator to invite you.</>
+        : <>New here? <Link to="/register">Create an account</Link></>}</p>
     </div>
   );
 }

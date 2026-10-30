@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { api, type Notification } from '../api';
-import { useAuth } from '../auth';
+import { useAuth, useTenant } from '../auth';
 import { timeAgo, useAction } from '../ui';
 
 function Bell() {
@@ -82,26 +82,37 @@ export function Layout() {
   const [menu, setMenu] = useState(false);
   useEffect(() => setMenu(false), [loc.pathname]);
 
+  const tenant = useTenant();
   const links: { to: string; label: string; end?: boolean }[] = [{ to: '/', label: 'Courses', end: true }];
   if (user?.role === 'student') links.push({ to: '/dashboard', label: 'My learning' });
   if (user?.role === 'teacher') links.push({ to: '/teach', label: 'My courses' });
   if (user?.role === 'admin') links.push({ to: '/teach', label: 'My courses' }, { to: '/admin', label: 'Admin' });
+  if (user?.role === 'superadmin') links.push({ to: '/admin', label: 'Admin' });
+  const isSuper = user?.role === 'superadmin';
 
   return (
     <>
       <a href="#main" className="skip">Skip to content</a>
       <header className="topbar">
         <div className="wrap topbar-inner">
-          <Link to="/" className="brand" aria-label="Learn home">
-            <span className="brand-mark" aria-hidden />Learn
+          <Link to="/" className="brand" aria-label={`${tenant.name} home`}>
+            {tenant.branding.logoUrl
+              ? <img src={tenant.branding.logoUrl} alt="" className="brand-logo" />
+              : <span className="brand-mark" aria-hidden />}
+            <span className="brand-name">{tenant.name}</span>
           </Link>
           <button className="icon-btn menu-btn" aria-label="Menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>☰</button>
           <nav className={`mainnav ${menu ? 'open' : ''}`} aria-label="Main">
             {links.map((l) => <NavLink key={l.to + l.label} to={l.to} end={l.end}>{l.label}</NavLink>)}
             {!user && <NavLink to="/verify">Verify a certificate</NavLink>}
             {!user && <NavLink to="/login" className="nav-cta-ghost">Sign in</NavLink>}
-            {!user && <NavLink to="/register" className="nav-cta">Create account</NavLink>}
-            {user && (
+            {!user && tenant.access.signup === 'open' && <NavLink to="/register" className="nav-cta">Create account</NavLink>}
+            {isSuper && (
+              <div className="nav-user">
+                <a href="/platform" className="super-chip" title="You are viewing this organisation as the platform super admin">Platform console</a>
+              </div>
+            )}
+            {user && !isSuper && (
               <div className="nav-user">
                 <NavLink to="/profile" className="avatar-link" title="Profile">
                   {user.photoUrl ? <img src={user.photoUrl} alt="" className="avatar" /> : <span className="avatar avatar-initial">{user.name.charAt(0).toUpperCase()}</span>}
@@ -111,7 +122,7 @@ export function Layout() {
               </div>
             )}
           </nav>
-          {user && <Bell />}
+          {user && !isSuper && <Bell />}
         </div>
       </header>
       <VerifyBanner />
@@ -119,7 +130,7 @@ export function Layout() {
         <Outlet />
       </main>
       <footer className="footer">
-        <div className="wrap">Learn · courses, quizzes and certificates you can verify. <Link to="/verify">Verify a certificate</Link></div>
+        <div className="wrap">{tenant.name} · courses, quizzes and certificates you can verify. <Link to="/verify">Verify a certificate</Link></div>
       </footer>
     </>
   );

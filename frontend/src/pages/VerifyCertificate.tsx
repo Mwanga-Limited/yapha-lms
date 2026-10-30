@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ApiError } from '../api';
+import { ApiError, apiUrl } from '../api';
 import { Alert, Button, Loading, fmtDate, useDocumentTitle, useLoad } from '../ui';
 
 interface Cert { code: string; valid: boolean; recipientName: string; courseTitle: string; teacherName: string; issuedAt: string; revokedAt: string | null; revokeReason: string | null }
 
 async function lookup(code: string): Promise<Cert> {
-  const res = await fetch(`/api/certificates/${encodeURIComponent(code)}`);
+  const res = await fetch(apiUrl(`/certificates/${encodeURIComponent(code)}`));
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new ApiError(body?.error || 'Not found', res.status, body);
   return body.certificate;
@@ -42,7 +42,7 @@ export function VerifyCertificate() {
             <div><dt>Code</dt><dd><code>{data.code}</code></dd></div>
           </dl>
           {!data.valid && <Alert tone="error" title={`Revoked on ${fmtDate(data.revokedAt)}`}>{data.revokeReason}</Alert>}
-          {data.valid && <a className="btn btn-secondary" href={`/api/certificates/${data.code}?format=pdf`} target="_blank" rel="noreferrer">View PDF</a>}
+          {data.valid && <a className="btn btn-secondary" href={apiUrl(`/certificates/${data.code}?format=pdf`)} target="_blank" rel="noreferrer">View PDF</a>}
         </div>
       )}
     </div>

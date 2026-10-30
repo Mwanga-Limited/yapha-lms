@@ -1,7 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, errorMessage } from '../../api';
+import { useTenant } from '../../auth';
 import { Alert, Button, Field, useDocumentTitle } from '../../ui';
+import { passwordOk } from '../../password';
+import { PasswordInput } from '../../components/PasswordInput';
 
 export function ForgotPassword() {
   useDocumentTitle('Reset password');
@@ -32,8 +35,10 @@ export function ForgotPassword() {
 }
 
 export function ResetPassword() {
-  useDocumentTitle('Choose a new password');
   const [params] = useSearchParams();
+  const tenant = useTenant();
+  const invite = params.get('invite') === '1';
+  useDocumentTitle(invite ? 'Accept invitation' : 'Choose a new password');
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
   const [done, setDone] = useState(false);
@@ -41,6 +46,7 @@ export function ResetPassword() {
   const [busy, setBusy] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!passwordOk(pw)) { setError('Your password doesn’t meet all the requirements yet.'); return; }
     if (pw !== pw2) { setError('The passwords do not match'); return; }
     setBusy(true); setError('');
     try { await api('auth', 'resetPassword', { token: params.get('token') || '', password: pw }); setDone(true); }
@@ -48,15 +54,17 @@ export function ResetPassword() {
   };
   return (
     <div className="auth-card">
-      <h1>Choose a new password</h1>
+      <h1>{invite ? `Join ${tenant.name}` : 'Choose a new password'}</h1>
+      {invite && !done && <p className="muted">Choose a password to activate your account.</p>}
       {done ? (
-        <Alert tone="ok" title="Password changed">You have been signed out everywhere. <Link to="/login">Sign in with your new password</Link>.</Alert>
+        invite
+          ? <Alert tone="ok" title="Your account is ready"><Link to="/login">Sign in to {tenant.name}</Link> with your email and new password.</Alert>
+          : <Alert tone="ok" title="Password changed">You have been signed out everywhere. <Link to="/login">Sign in with your new password</Link>.</Alert>
       ) : (
         <form onSubmit={submit}>
           {error && <Alert tone="error">{error}</Alert>}
-          <Field label="New password" type="password" value={pw} onChange={(e) => setPw(e.target.value)} required minLength={8} autoComplete="new-password" hint="At least 8 characters, with letters and numbers." />
-          <Field label="Repeat new password" type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} required autoComplete="new-password" />
-          <Button type="submit" busy={busy} className="btn-block">Save new password</Button>
+          <PasswordInput label="New password" value={pw} onChange={setPw} confirm={pw2} onConfirmChange={setPw2} autoFocus />
+          <Button type="submit" busy={busy} className="btn-block">{invite ? 'Activate my account' : 'Save new password'}</Button>
         </form>
       )}
     </div>

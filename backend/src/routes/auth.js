@@ -3,7 +3,7 @@ import { authenticator } from 'otplib';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import { config } from '../config.js';
-import { query, tx, pool } from '../db.js';
+import { db, query, tx } from '../db.js';
 import { actionEndpoint, email, password, reqStr } from '../lib/actions.js';
 import { audit } from '../lib/audit.js';
 import { fail } from '../lib/errors.js';
@@ -11,6 +11,7 @@ import { emails } from '../lib/mailer.js';
 import { notifyAdmins } from '../lib/notify.js';
 import { PRIVILEGED, clearSession, publicUser, readMfaToken, setSession, signMfaToken } from '../lib/security.js';
 import { consumeUserToken, issueUserToken, randomCode } from '../lib/tokens.js';
+import { currentTenant, emailAllowed, publicTenant, settingsOf } from '../lib/tenant.js';
 
 authenticator.options = { window: 1 };
 const google = config.googleClientId ? new OAuth2Client(config.googleClientId) : null;
@@ -30,13 +31,25 @@ async function sendVerification(db, user) {
   return () => emails.verify(user, token);
 }
 
-/** Second step for Admin/Teacher (AD-07), or a direct session for Students. */
+/** Two-step sign-in: always for Admin/Teacher (AD-07); for Students when the organisation requires it. */
+const needsMfa = (user) => PRIVILEGED.includes(user.role) || (user.role === 'student' && settingsOf(currentTenant()).auth.studentMfa);
+
+/** Joining rules of the organisation: open or invite-only, and allowed email domains. */
+function checkCanJoin(email) {
+  const tenant = currentTenant();
+  if (settingsOf(tenant).access.signup === 'invite') fail(403, 'This organisation is invite-only. Ask an administrator to invite you.', { code: 'INVITE_ONLY' });
+  if (!emailAllowed(tenant, email)) {
+    fail(403, `Use your ${settingsOf(tenant).access.allowedDomains.map((d) => `@${d}`).join(' or ')} email address to join this organisation.`, { code: 'EMAIL_DOMAIN' });
+  }
+}
+
+/** Second step for Admin/Teacher (AD-07) and, if configured, Students; otherwise a direct session. */
 async function completeLogin(ctx, user, method) {
-  if (PRIVILEGED.includes(user.role)) {
+  if (needsMfa(user)) {
     let emailHint = null;
     if (!user.totp_enabled) {
       const code = randomCode();
-      await issueUserToken(pool, user.id, 'mfa_email', 10, code);
+      await issueUserToken(db, user.id, 'mfa_email', 10, code);
       ctx.after(() => emails.mfaCode(user, code));
       emailHint = user.email.replace(/^(.).*(@.*)$/, '$1•••$2');
     }
@@ -59,7 +72,10 @@ async function loadMfaUser(token) {
 export const authRoutes = actionEndpoint({
   me: {
     auth: 'public',
-    run: async ({ user }) => ({ user: publicUser(user), googleClientId: config.googleClientId || null }),
+    run: async ({ user }) => {
+      const tenant = currentTenant();
+      return { user: publicUser(user), tenant: publicTenant(tenant), googleClientId: settingsOf(tenant).auth.google ? (config.googleClientId || null) : null };
+    },
   },
 
   register: {
@@ -72,6 +88,7 @@ export const authRoutes = actionEndpoint({
     run: async (ctx) => {
       const d = ctx.data;
       if (d.joinAs === 'teacher' && !d.application) fail(400, 'Teacher sign-up needs a short profile and your area of expertise');
+      checkCanJoin(d.email);
       const hash = await bcrypt.hash(d.password, config.bcryptRounds);
       const user = await tx(async (db) => {
         const exists = await db.query(`SELECT 1 FROM users WHERE lower(email) = $1`, [d.email]);
@@ -125,7 +142,7 @@ export const authRoutes = actionEndpoint({
     auth: 'public',
     schema: z.object({ credential: z.string().min(10) }),
     run: async (ctx) => {
-      if (!google) fail(400, 'Google sign-in is not configured');
+      if (!google || !settingsOf(currentTenant()).auth.google) fail(400, 'Google sign-in is not available for this organisation');
       let payload;
       try {
         payload = (await google.verifyIdToken({ idToken: ctx.data.credential, audience: config.googleClientId })).getPayload();
@@ -136,6 +153,7 @@ export const authRoutes = actionEndpoint({
         let { rows } = await db.query(`SELECT * FROM users WHERE google_sub = $1 OR lower(email) = $2 ORDER BY (google_sub = $1) DESC LIMIT 1`, [payload.sub, em]);
         let u = rows[0];
         if (!u) {
+          checkCanJoin(em);
           ({ rows } = await db.query(
             `INSERT INTO users (email, name, google_sub, email_verified_at) VALUES ($1,$2,$3, now()) RETURNING *`,
             [em, payload.name || em.split('@')[0], payload.sub],
@@ -164,7 +182,7 @@ export const authRoutes = actionEndpoint({
       if ((await recentCount('auth.mfa_failed', u.id)) >= config.loginMaxFailures) fail(429, 'Too many wrong codes. Try again in 15 minutes.');
       let method = null;
       if (u.totp_enabled && u.totp_secret && authenticator.check(ctx.data.code, u.totp_secret)) method = 'totp';
-      else if (await consumeUserToken(pool, ctx.data.code, 'mfa_email', u.id)) method = 'email';
+      else if (await consumeUserToken(db, ctx.data.code, 'mfa_email', u.id)) method = 'email';
       if (!method) {
         await audit(null, ctx, { action: 'auth.mfa_failed', targetType: 'user', targetId: u.id, actor: u });
         fail(401, 'That code is not correct');
@@ -181,7 +199,7 @@ export const authRoutes = actionEndpoint({
     run: async (ctx) => {
       const u = await loadMfaUser(ctx.data.token);
       const code = randomCode();
-      await issueUserToken(pool, u.id, 'mfa_email', 10, code);
+      await issueUserToken(db, u.id, 'mfa_email', 10, code);
       ctx.after(() => emails.mfaCode(u, code));
       return { ok: true, emailHint: u.email.replace(/^(.).*(@.*)$/, '$1•••$2') };
     },
@@ -212,7 +230,7 @@ export const authRoutes = actionEndpoint({
     auth: 'user',
     run: async (ctx) => {
       if (ctx.user.email_verified_at) return { ok: true, alreadyVerified: true };
-      ctx.after(await sendVerification(pool, ctx.user));
+      ctx.after(await sendVerification(db, ctx.user));
       return { ok: true };
     },
   },
@@ -223,7 +241,7 @@ export const authRoutes = actionEndpoint({
     run: async (ctx) => {
       const { rows } = await query(`SELECT * FROM users WHERE lower(email) = $1 AND is_active`, [ctx.data.email]);
       if (rows[0]) {
-        const token = await issueUserToken(pool, rows[0].id, 'reset_password', 60);
+        const token = await issueUserToken(db, rows[0].id, 'reset_password', 60);
         ctx.after(() => emails.reset(rows[0], token));
         await audit(null, ctx, { action: 'auth.password_reset_requested', targetType: 'user', targetId: rows[0].id, actor: rows[0] });
       }
@@ -237,11 +255,16 @@ export const authRoutes = actionEndpoint({
     run: async (ctx) => {
       const hash = await bcrypt.hash(ctx.data.password, config.bcryptRounds);
       await tx(async (db) => {
-        const userId = await consumeUserToken(db, ctx.data.token, 'reset_password');
-        if (!userId) fail(400, 'This reset link is invalid or has expired');
+        // A password-reset link, or an invitation link (which also confirms the email address).
+        let userId = await consumeUserToken(db, ctx.data.token, 'reset_password');
+        const invited = !userId && (userId = await consumeUserToken(db, ctx.data.token, 'invite'));
+        if (!userId) fail(400, 'This link is invalid or has expired');
         // Bumping token_version signs out every existing session.
-        const { rows } = await db.query(`UPDATE users SET password_hash = $2, token_version = token_version + 1 WHERE id = $1 RETURNING *`, [userId, hash]);
-        await audit(db, ctx, { action: 'auth.password_reset', targetType: 'user', targetId: userId, actor: rows[0] });
+        const { rows } = await db.query(
+          `UPDATE users SET password_hash = $2, token_version = token_version + 1,
+                  email_verified_at = CASE WHEN $3 THEN coalesce(email_verified_at, now()) ELSE email_verified_at END
+            WHERE id = $1 RETURNING *`, [userId, hash, !!invited]);
+        await audit(db, ctx, { action: invited ? 'auth.invite_accepted' : 'auth.password_reset', targetType: 'user', targetId: userId, actor: rows[0] });
       });
       clearSession(ctx.res);
       return { ok: true };

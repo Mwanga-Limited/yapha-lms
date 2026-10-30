@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { pool, query, tx } from '../db.js';
+import { query, tx } from '../db.js';
 import { actionEndpoint, id, page, reqStr, str } from '../lib/actions.js';
 import { audit } from '../lib/audit.js';
 import { lessonsOf, quizzesOf } from '../lib/content.js';
@@ -7,6 +7,8 @@ import { fail, notFound } from '../lib/errors.js';
 import { emails } from '../lib/mailer.js';
 import { notify } from '../lib/notify.js';
 import { publicUser } from '../lib/security.js';
+import { currentTenant, emailAllowed, publicTenant, settingsOf, settingsSchema } from '../lib/tenant.js';
+import { issueUserToken } from '../lib/tokens.js';
 import { courseMeta } from './courses.js';
 
 const ADMIN = ['admin'];
@@ -184,13 +186,62 @@ export const adminRoutes = actionEndpoint({
     }),
   },
 
+  // ------------------------------------------------------------- organisation settings (this organisation only)
+  settings: {
+    auth: ADMIN,
+    run: async () => {
+      const t = currentTenant();
+      const { rows: [counts] } = await query(`SELECT
+        (SELECT count(*) FROM users) AS members, (SELECT count(*) FROM courses WHERE status = 'published') AS published_courses`);
+      return { tenant: publicTenant(t), settings: settingsOf(t), name: t.name, slug: t.slug, id: t.id, createdAt: t.created_at, counts };
+    },
+  },
+
+  updateSettings: {
+    auth: ADMIN,
+    schema: z.object({ name: reqStr(120).optional(), settings: settingsSchema }),
+    run: async (ctx) => {
+      const t = currentTenant();
+      const next = ctx.data.settings;
+      if (next.branding.logoFileId) {
+        const f = await query(`SELECT 1 FROM files WHERE id = $1 AND purpose = 'logo'`, [next.branding.logoFileId]);
+        if (!f.rowCount) fail(400, 'Upload the logo first');
+      }
+      const before = settingsOf(t);
+      const { rows: [u] } = await query(
+        `UPDATE tenants SET settings = $2, name = coalesce($3, name), updated_at = now() WHERE id = $1 RETURNING *`,
+        [t.id, next, ctx.data.name ?? null]);
+      await audit({ query }, ctx, { action: 'tenant.settings_update', targetType: 'tenant', targetId: t.id,
+        oldValues: { name: t.name, ...before }, newValues: { name: u.name, ...next } });
+      return { tenant: publicTenant(u), settings: settingsOf(u) };
+    },
+  },
+
+  /** Invite someone into this organisation (the only way in when sign-up is invite-only). */
+  inviteUser: {
+    auth: ADMIN,
+    schema: z.object({ name: reqStr(120), email: z.string().trim().toLowerCase().email('Enter a valid email').max(254), role: z.enum(['student', 'teacher']).default('student') }),
+    run: async (ctx) => tx(async (db) => {
+      const d = ctx.data;
+      if (!emailAllowed(currentTenant(), d.email)) fail(400, `This organisation only accepts ${settingsOf(currentTenant()).access.allowedDomains.map((x) => '@' + x).join(', ')} addresses`);
+      const exists = await db.query(`SELECT 1 FROM users WHERE lower(email) = $1`, [d.email]);
+      if (exists.rowCount) fail(409, 'Someone with this email is already a member of this organisation');
+      const { rows: [u] } = await db.query(`INSERT INTO users (email, name, role) VALUES ($1,$2,$3) RETURNING *`, [d.email, d.name, d.role]);
+      const token = await issueUserToken(db, u.id, 'invite', 7 * 24 * 60);
+      await audit(db, ctx, { action: 'user.invite', targetType: 'user', targetId: u.id, newValues: { email: u.email, role: u.role, memberCode: u.member_code } });
+      const inviter = ctx.user.isSuper ? 'The platform administrator' : ctx.user.name;
+      ctx.after(() => emails.invite(u, token, inviter));
+      return { user: publicUser(u) };
+    }),
+  },
+
   // ------------------------------------------------------------- users (AD-03, AD-04, AD-05, AD-06)
   users: {
     auth: ADMIN,
     schema: z.object({ q: str(100).default(''), role: z.enum(['', 'student', 'teacher', 'admin']).default(''), status: z.enum(['', 'active', 'inactive']).default(''), page }),
     run: async ({ data }) => {
       const params = [likeEscape(data.q), data.role, data.status, PAGE, (data.page - 1) * PAGE];
-      const where = `($1 = '' OR name ILIKE '%'||$1||'%' OR email ILIKE '%'||$1||'%') AND ($2 = '' OR role::text = $2)
+      const where = `($1 = '' OR name ILIKE '%'||$1||'%' OR email ILIKE '%'||$1||'%' OR member_code ILIKE '%'||$1||'%') AND ($2 = '' OR role::text = $2)
                      AND ($3 = '' OR ($3 = 'active') = is_active)`;
       const [list, total] = await Promise.all([
         query(`SELECT * FROM users WHERE ${where} ORDER BY created_at DESC LIMIT $4 OFFSET $5`, params),
@@ -299,7 +350,7 @@ export const adminRoutes = actionEndpoint({
     schema: auditSchema,
     run: async (ctx) => {
       const f = auditFilters(ctx.data);
-      const { rows } = await pool.query(`SELECT a.* FROM audit_logs a ${f.where} ORDER BY a.created_at DESC, a.id DESC LIMIT 50000`, f.params);
+      const { rows } = await query(`SELECT a.* FROM audit_logs a ${f.where} ORDER BY a.created_at DESC, a.id DESC LIMIT 50000`, f.params);
       const cols = ['id', 'created_at', 'actor_email', 'actor_role', 'actor_id', 'action', 'target_type', 'target_id', 'old_values', 'new_values', 'ip', 'user_agent'];
       const csv = [cols.join(','), ...rows.map((r) => cols.map((c) => csvCell(c === 'created_at' ? new Date(r[c]).toISOString() : r[c])).join(','))].join('\r\n');
       await audit(null, ctx, { action: 'audit.export', targetType: 'audit_log', newValues: { filters: ctx.data, rows: rows.length } });

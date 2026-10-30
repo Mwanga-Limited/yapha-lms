@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import {
   ROOT, agent, auditCount, call, codeFromMail, correctAnswers, loginPrivileged, loginRoot, makeTeacher, outbox, pool,
   publishedCourse, registerStudent, resetDb, sampleContent, submittedCourse, tokenFromMail, wrongAnswers,
+  api,
 } from './helpers.js';
 
 let root;
@@ -12,7 +13,7 @@ after(async () => { await pool.end(); });
 describe('Authentication & security', () => {
   test('register, verify email, sign in, sign out', async () => {
     const a = agent();
-    await call(a, 'auth', 'register', { name: 'Ada Learner', email: 'ada@test.dev', password: 'Password123' }).expect(200);
+    await call(a, 'auth', 'register', { name: 'Ada Learner', email: 'ada@test.dev', password: 'Password123!' }).expect(200);
     let me = await call(a, 'auth', 'me');
     assert.equal(me.body.user.role, 'student');            // AD-02
     assert.equal(me.body.user.emailVerified, false);
@@ -22,13 +23,18 @@ describe('Authentication & security', () => {
     await call(a, 'auth', 'logout').expect(200);
     assert.equal((await call(a, 'auth', 'me')).body.user, null);
     const b = agent();
-    const r = await call(b, 'auth', 'login', { email: 'ADA@test.dev', password: 'Password123' }).expect(200);
+    const r = await call(b, 'auth', 'login', { email: 'ADA@test.dev', password: 'Password123!' }).expect(200);
     assert.equal(r.body.user.email, 'ada@test.dev');        // students sign in without a second factor
   });
 
   test('duplicate email, weak password and wrong password are refused; failures are logged', async () => {
-    await call(agent(), 'auth', 'register', { name: 'X', email: 'ada@test.dev', password: 'Password123' }).expect(409);
+    await call(agent(), 'auth', 'register', { name: 'X', email: 'ada@test.dev', password: 'Password123!' }).expect(409);
     await call(agent(), 'auth', 'register', { name: 'X', email: 'weak@test.dev', password: 'short' }).expect(400);
+    // Every rule is enforced by the server too, and the error says what is missing.
+    const noSpecial = await call(agent(), 'auth', 'register', { name: 'X', email: 'weak2@test.dev', password: 'Password123' }).expect(400);
+    assert.match(noSpecial.body.error, /special character/);
+    const noUpper = await call(agent(), 'auth', 'register', { name: 'X', email: 'weak3@test.dev', password: 'password123!' }).expect(400);
+    assert.match(noUpper.body.error, /uppercase/);
     await call(agent(), 'auth', 'login', { email: 'ada@test.dev', password: 'nope' }).expect(401);
     assert.ok((await auditCount('auth.login_failed', 'ada@test.dev')) >= 1);
   });
@@ -36,17 +42,17 @@ describe('Authentication & security', () => {
   test('login rate limiting locks an account after 5 failures', async () => {
     await registerStudent('Locked Out', { verify: false });
     for (let i = 0; i < 5; i++) await call(agent(), 'auth', 'login', { email: 'lockedout@test.dev', password: 'bad' }).expect(401);
-    await call(agent(), 'auth', 'login', { email: 'lockedout@test.dev', password: 'Password123' }).expect(429);
+    await call(agent(), 'auth', 'login', { email: 'lockedout@test.dev', password: 'Password123!' }).expect(429);
   });
 
   test('password reset link works once and signs out other sessions', async () => {
     const s = await registerStudent('Reset Me');
     await call(agent(), 'auth', 'requestPasswordReset', { email: s.email }).expect(200);
     const token = tokenFromMail(s.email, 'reset-password');
-    await call(agent(), 'auth', 'resetPassword', { token, password: 'NewPassword456' }).expect(200);
-    await call(agent(), 'auth', 'resetPassword', { token, password: 'NewPassword789' }).expect(400);
+    await call(agent(), 'auth', 'resetPassword', { token, password: 'NewPassword456!' }).expect(200);
+    await call(agent(), 'auth', 'resetPassword', { token, password: 'NewPassword789!' }).expect(400);
     assert.equal((await call(s.a, 'auth', 'me')).body.user, null);
-    await call(agent(), 'auth', 'login', { email: s.email, password: 'NewPassword456' }).expect(200);
+    await call(agent(), 'auth', 'login', { email: s.email, password: 'NewPassword456!' }).expect(200);
   });
 
   test('AD-07: Admins need a second factor; wrong codes are refused', async () => {
@@ -79,13 +85,13 @@ describe('Admin rules (AD-03 … AD-08)', () => {
     await call(root, 'admin', 'decideApplication', { id: app.id, decision: 'decline' }).expect(400); // reason required
     await call(root, 'admin', 'decideApplication', { id: app.id, decision: 'approve' }).expect(200);
     assert.equal((await call(t.a, 'auth', 'me')).body.user, null, 'role change signs the user out so 2FA applies');
-    const ta = await loginPrivileged(t.email, 'Password123');
+    const ta = await loginPrivileged(t.email, 'Password123!');
     assert.equal((await call(ta, 'auth', 'me')).body.user.role, 'teacher');
   });
 
   test('teacher sign-up option creates an application, not a teacher', async () => {
     const a = agent();
-    await call(a, 'auth', 'register', { name: 'Signup Teacher', email: 'st@test.dev', password: 'Password123', joinAs: 'teacher',
+    await call(a, 'auth', 'register', { name: 'Signup Teacher', email: 'st@test.dev', password: 'Password123!', joinAs: 'teacher',
       application: { bio: 'Professional chemist and lecturer for years.', expertise: 'Chemistry' } }).expect(200);
     assert.equal((await call(a, 'auth', 'me')).body.user.role, 'student');
     const apps = (await call(a, 'account', 'myApplications')).body.applications;
@@ -95,7 +101,7 @@ describe('Admin rules (AD-03 … AD-08)', () => {
   test('AD-04: Admins cannot demote or deactivate other Admins; the first Admin is protected; attempts are logged (AD-06)', async () => {
     const s = await registerStudent('Second Admin');
     await call(root, 'admin', 'changeRole', { userId: s.id, role: 'admin' }).expect(200);
-    const second = await loginPrivileged(s.email, 'Password123');
+    const second = await loginPrivileged(s.email, 'Password123!');
     const rootId = (await pool.query(`SELECT id FROM users WHERE is_root`)).rows[0].id;
 
     const before = await auditCount('user.role_change_blocked');
@@ -119,10 +125,10 @@ describe('Admin rules (AD-03 … AD-08)', () => {
     await call(root, 'admin', 'setActive', { userId: s.id, active: false }).expect(400);   // reason required
     await call(root, 'admin', 'setActive', { userId: s.id, active: false, reason: 'Spam' }).expect(200);
     assert.equal((await call(s.a, 'auth', 'me')).body.user, null);
-    await call(agent(), 'auth', 'login', { email: s.email, password: 'Password123' }).expect(403);
+    await call(agent(), 'auth', 'login', { email: s.email, password: 'Password123!' }).expect(403);
     assert.equal((await pool.query(`SELECT count(*)::int AS n FROM users WHERE id = $1`, [s.id])).rows[0].n, 1);
     await call(root, 'admin', 'setActive', { userId: s.id, active: true }).expect(200);
-    await call(agent(), 'auth', 'login', { email: s.email, password: 'Password123' }).expect(200);
+    await call(agent(), 'auth', 'login', { email: s.email, password: 'Password123!' }).expect(200);
   });
 });
 
@@ -230,7 +236,7 @@ describe('Enrolment access (EN-01 … EN-03)', () => {
     assert.equal(again.body.alreadyEnrolled, true);
     const { rows: [{ n }] } = await pool.query(`SELECT count(*)::int AS n FROM enrollments WHERE user_id = $1 AND course_id = $2`, [s.id, courseId]);
     assert.equal(n, 1);
-    await assert.rejects(pool.query(`INSERT INTO enrollments (user_id, course_id) VALUES ($1,$2)`, [s.id, courseId]), /duplicate key/);
+    await assert.rejects(pool.query(`INSERT INTO enrollments (tenant_id, user_id, course_id) SELECT tenant_id, $1, $2 FROM users WHERE id = $1`, [s.id, courseId]), /duplicate key/);
   });
 
   test('EN-02: only enrolled learners open lessons and quizzes; preview lessons are public', async () => {
@@ -327,10 +333,10 @@ describe('Certificates (CC-01 … CC-03)', () => {
     const { rows: [{ n }] } = await pool.query(`SELECT count(*)::int AS n FROM certificates WHERE user_id = $1`, [s.id]);
     assert.equal(n, 1);
 
-    const v = await agent().get(`/api/certificates/${code}`).expect(200);
+    const v = await agent().get(`${api('certificates')}/${code}`).expect(200);
     assert.equal(v.body.certificate.valid, true);
     assert.equal(v.body.certificate.recipientName, 'Finisher');
-    const pdf = await agent().get(`/api/certificates/${code}?format=pdf`).buffer(true).parse((res, cb) => { const d = []; res.on('data', (c) => d.push(c)); res.on('end', () => cb(null, Buffer.concat(d))); }).expect(200);
+    const pdf = await agent().get(`${api('certificates')}/${code}?format=pdf`).buffer(true).parse((res, cb) => { const d = []; res.on('data', (c) => d.push(c)); res.on('end', () => cb(null, Buffer.concat(d))); }).expect(200);
     assert.equal(pdf.body.subarray(0, 4).toString(), '%PDF');
     assert.ok(outbox.some((m) => m.to === s.email && /Certificate issued/.test(m.subject)));
   });
@@ -346,11 +352,40 @@ describe('Certificates (CC-01 … CC-03)', () => {
     await call(root, 'admin', 'revokeCertificate', { id: certs[0].id, reason: '' }).expect(400);
     await call(teacher, 'admin', 'revokeCertificate', { id: certs[0].id, reason: 'Cheating' }).expect(403);
     await call(root, 'admin', 'revokeCertificate', { id: certs[0].id, reason: 'Academic misconduct' }).expect(200);
-    const v = await agent().get(`/api/certificates/${code}`).expect(200);
+    const v = await agent().get(`${api('certificates')}/${code}`).expect(200);
     assert.equal(v.body.certificate.valid, false);
     assert.equal(v.body.certificate.revokeReason, 'Academic misconduct');
-    await agent().get(`/api/certificates/${code}?format=pdf`).expect(410);
+    await agent().get(`${api('certificates')}/${code}?format=pdf`).expect(410);
     assert.ok((await auditCount('certificate.revoke', certs[0].id)) === 1);
+  });
+});
+
+describe('Certificates are for Students only', () => {
+  let teacher, courseId;
+  before(async () => {
+    teacher = (await makeTeacher('Owner Teacher', root)).a;
+    courseId = await publishedCourse(teacher, root, 'Students Only Course');
+  });
+
+  test('Teachers and Admins cannot enrol, open the player or the learner dashboard', async () => {
+    const other = (await makeTeacher('Curious Teacher', root)).a;
+    const r = await call(other, 'learn', 'enrol', { courseId }).expect(403);
+    assert.equal(r.body.code, 'STUDENTS_ONLY');
+    await call(root, 'learn', 'enrol', { courseId }).expect(403);
+    await call(other, 'learn', 'player', { courseId }).expect(403);
+    await call(other, 'account', 'dashboard').expect(403);
+    await call(root, 'account', 'dashboard').expect(403);
+  });
+
+  test('a learner promoted to Teacher before finishing gets no certificate and loses learner access', async () => {
+    const s = await registerStudent('Promoted Before Finish');
+    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l1' }).expect(200);
+    await call(root, 'admin', 'changeRole', { userId: s.id, role: 'teacher' }).expect(200);
+    const t = await loginPrivileged(s.email, 'Password123!');
+    await call(t, 'learn', 'completeLesson', { courseId, lessonId: 'l2' }).expect(403);
+    const { rows: [{ n }] } = await pool.query(`SELECT count(*)::int AS n FROM certificates WHERE user_id = $1`, [s.id]);
+    assert.equal(n, 0);
   });
 });
 

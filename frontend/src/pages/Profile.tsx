@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, upload, type User } from '../api';
-import { useAuth } from '../auth';
+import { useAuth, useTenant } from '../auth';
 import { Alert, Button, Field, TextArea, useAction, useDocumentTitle } from '../ui';
+import { passwordOk } from '../password';
+import { PasswordInput } from '../components/PasswordInput';
 
 function ProfileForm() {
   const { user, setUser } = useAuth();
@@ -53,6 +55,7 @@ function PasswordForm() {
   const { busy, run } = useAction();
   const save = (e: FormEvent) => {
     e.preventDefault();
+    if (!passwordOk(pw)) { setErr('Your new password doesn’t meet all the requirements yet.'); return; }
     if (pw !== pw2) { setErr('The new passwords do not match'); return; }
     setErr('');
     void run(async () => { await api('account', 'changePassword', { currentPassword: cur, newPassword: pw }); setCur(''); setPw(''); setPw2(''); await refresh(); },
@@ -64,8 +67,7 @@ function PasswordForm() {
       {!user!.hasPassword && <p className="muted">You sign in with Google. Add a password to also sign in with your email.</p>}
       {err && <Alert tone="error">{err}</Alert>}
       {user!.hasPassword && <Field label="Current password" type="password" autoComplete="current-password" value={cur} onChange={(e) => setCur(e.target.value)} required />}
-      <Field label="New password" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} required minLength={8} hint="At least 8 characters, with letters and numbers." />
-      <Field label="Repeat new password" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} required />
+      <PasswordInput label="New password" value={pw} onChange={setPw} confirm={pw2} onConfirmChange={setPw2} />
       <Button type="submit" busy={busy}>{user!.hasPassword ? 'Change password' : 'Set password'}</Button>
     </form>
   );
@@ -113,9 +115,10 @@ function TwoFactor() {
 export function Profile() {
   useDocumentTitle('Profile');
   const { user } = useAuth();
+  const tenant = useTenant();
   return (
     <>
-      <div className="page-head"><h1>Your account</h1><p className="muted">Signed in as {user!.email} · {user!.role}{user!.isRoot ? ' (first admin)' : ''}</p>{user!.role === 'student' && <p className="small">Want to teach on Learn? <Link to="/teach">Apply to become a teacher</Link></p>}</div>
+      <div className="page-head"><h1>Your account</h1><p className="muted">Signed in as {user!.email} · {user!.role}{user!.isRoot ? ' (first admin)' : ''} · Member ID <code>{user!.memberCode}</code></p>{user!.role === 'student' && <p className="small">Want to teach at {tenant.name}? <Link to="/teach">Apply to become a teacher</Link></p>}</div>
       <div className="two-col">
         <ProfileForm />
         <div className="stack">

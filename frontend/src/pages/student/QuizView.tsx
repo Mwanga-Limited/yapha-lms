@@ -59,13 +59,13 @@ export function QuizView({ courseId, quizId, onSubmitted }: { courseId: string; 
       {result && (
         <Alert tone={result.passed ? 'ok' : 'warn'} title={result.passed ? `Passed with ${result.score}%` : `You scored ${result.score}%`}>
           {result.correct} of {result.total} correct.{' '}
-          {!result.passed && (locked ? 'You have used all 3 attempts.' : `You need ${state.passMark}% to pass. Review the questions marked below and try again.`)}
+          {!result.passed && (locked ? `You have used all ${state.maxAttempts} attempts.` : `You need ${state.passMark}% to pass. Review the questions marked below and try again.`)}
         </Alert>
       )}
       {state.passed && !result && <Alert tone="ok" title="You passed this quiz">Best score {state.bestScore}%.</Alert>}
       {locked && (
         <Alert tone="warn" title="This quiz is locked for now">
-          You used all 3 attempts. It unlocks in <Countdown until={state.lockedUntil!} /> ({fmtDateTime(state.lockedUntil)}), then you get 3 more attempts.
+          You used all {state.maxAttempts} attempts. It unlocks in <Countdown until={state.lockedUntil!} /> ({fmtDateTime(state.lockedUntil)}), then you get {state.maxAttempts} more.
           Your teacher can also reset your attempts.
         </Alert>
       )}

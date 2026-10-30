@@ -3,7 +3,7 @@ import { query, tx } from '../db.js';
 import { actionEndpoint, id } from '../lib/actions.js';
 import { audit } from '../lib/audit.js';
 import {
-  LOCK_HOURS, MAX_ATTEMPTS, PASS_MARK, computeProgress, findItem, gradeQuiz, learnerQuiz, outlineOf,
+  computeProgress, quizRules, findItem, gradeQuiz, learnerQuiz, outlineOf,
 } from '../lib/content.js';
 import { fail, notFound } from '../lib/errors.js';
 import { activeEnrollment, checkCompletion, learnerState, loadCourseWithLive } from '../lib/learning.js';
@@ -29,7 +29,7 @@ function quizStateView(s) {
   if (lockedUntil && lockedUntil <= now) { used = 0; lockedUntil = null; }  // QZ-02: lock over → 3 more attempts
   const passed = !!s?.passed_at;
   return {
-    attemptsUsed: used, attemptsLeft: passed ? 0 : MAX_ATTEMPTS - used, maxAttempts: MAX_ATTEMPTS, passMark: PASS_MARK,
+    attemptsUsed: used, attemptsLeft: passed ? 0 : Math.max(0, quizRules().maxAttempts - used), maxAttempts: quizRules().maxAttempts, passMark: quizRules().passMark,
     lockedUntil: lockedUntil ? lockedUntil.toISOString() : null, passed, bestScore: s?.best_score ?? null,
   };
 }
@@ -45,7 +45,8 @@ export const learnRoutes = actionEndpoint({
     verified: true,
     schema: z.object({ courseId: id }),
     run: async (ctx) => tx(async (db) => {
-      if (ctx.user.role !== 'student') fail(403, 'Only student accounts can enrol in courses.', { code: 'STUDENTS_ONLY' });
+      // Only Students enrol, so only Students can ever earn a certificate.
+      if (ctx.user.role !== 'student') fail(403, 'Only student accounts can enrol in courses. Teachers and Admins can open courses they manage from the course editor.', { code: 'STUDENTS_ONLY' });
       const { rows: [c] } = await db.query(`SELECT * FROM courses WHERE id = $1`, [ctx.data.courseId]);
       if (!c) notFound('Course');
       if (c.status !== 'published') fail(409, 'This course is not open for enrolment');
@@ -64,7 +65,7 @@ export const learnRoutes = actionEndpoint({
 
   /** Course player shell: outline with per-item progress, resume point, certificate. */
   player: {
-    auth: 'student',
+    auth: ['student'],   // learning and certificates are for Student accounts only
     schema: z.object({ courseId: id }),
     run: async (ctx) => {
       const db = { query };
@@ -91,7 +92,7 @@ export const learnRoutes = actionEndpoint({
   },
 
   lesson: {
-    auth: 'student',
+    auth: ['student'],   // learning and certificates are for Student accounts only
     schema: z.object({ courseId: id, lessonId: itemRef }),
     run: async (ctx) => {
       const db = { query };
@@ -105,7 +106,7 @@ export const learnRoutes = actionEndpoint({
   },
 
   savePosition: {
-    auth: 'student',
+    auth: ['student'],   // learning and certificates are for Student accounts only
     schema: z.object({ courseId: id, lessonId: itemRef, positionSec: z.number().min(0).max(1e7) }),
     run: async (ctx) => {
       const db = { query };
@@ -120,7 +121,7 @@ export const learnRoutes = actionEndpoint({
   },
 
   completeLesson: {
-    auth: 'student',
+    auth: ['student'],   // learning and certificates are for Student accounts only
     schema: z.object({ courseId: id, lessonId: itemRef }),
     run: async (ctx) => tx(async (db) => {
       const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId, true);
@@ -138,7 +139,7 @@ export const learnRoutes = actionEndpoint({
   },
 
   quiz: {
-    auth: 'student',
+    auth: ['student'],   // learning and certificates are for Student accounts only
     schema: z.object({ courseId: id, quizId: itemRef }),
     run: async (ctx) => {
       const db = { query };
@@ -154,9 +155,9 @@ export const learnRoutes = actionEndpoint({
     },
   },
 
-  /** QZ-01/QZ-02: 70% pass mark, 3 attempts, then a 24h lock followed by 3 more attempts. */
+  /** QZ-01/QZ-02: pass mark, attempts and lock time come from the organisation (default 70%, 3, 24h). */
   submitQuiz: {
-    auth: 'student',
+    auth: ['student'],   // learning and certificates are for Student accounts only
     schema: z.object({ courseId: id, quizId: itemRef, answers: z.record(z.string(), z.array(z.string().max(64)).max(10)) }),
     run: async (ctx) => tx(async (db) => {
       const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId, true);
@@ -170,11 +171,12 @@ export const learnRoutes = actionEndpoint({
       if (s.locked_until && new Date(s.locked_until) > now) {
         fail(423, `This quiz is locked until ${new Date(s.locked_until).toISOString()}`, { lockedUntil: s.locked_until, code: 'QUIZ_LOCKED' });
       }
-      if (s.locked_until || used >= MAX_ATTEMPTS) used = 0;  // the 24h lock has passed: a new set of 3 attempts
+      const { maxAttempts, lockHours } = quizRules();   // this organisation's rules (default 3 attempts, 24h lock)
+      if (s.locked_until || used >= maxAttempts) used = 0;  // the lock has passed: a new set of attempts
 
       const g = gradeQuiz(quiz, ctx.data.answers);
       used += 1;
-      const lockedUntil = !g.passed && used >= MAX_ATTEMPTS ? new Date(now.getTime() + LOCK_HOURS * 3600 * 1000) : null;
+      const lockedUntil = !g.passed && used >= maxAttempts ? new Date(now.getTime() + lockHours * 3600 * 1000) : null;
       const { rows: [ns] } = await db.query(
         `UPDATE quiz_states SET attempts_used = $3, locked_until = $4, passed_at = CASE WHEN $5 THEN now() ELSE passed_at END,
                 best_score = greatest(coalesce(best_score, 0), $6), updated_at = now()
@@ -187,7 +189,7 @@ export const learnRoutes = actionEndpoint({
 
       const state = quizStateView(ns);
       await notify(db, ctx.user.id, { type: 'quiz', title: g.passed ? `Quiz passed: ${quiz.title}` : `Quiz result: ${quiz.title}`,
-        body: `You scored ${g.score}%.${!g.passed && state.lockedUntil ? ' The quiz is locked for 24 hours.' : ''}`, link: `/learn/${course.id}` });
+        body: `You scored ${g.score}%.${!g.passed && state.lockedUntil ? ` The quiz is locked for ${lockHours} hours.` : ''}`, link: `/learn/${course.id}` });
       const learner = ctx.user;
       ctx.after(() => emails.quizResult(learner, course, quiz, g.score, g.passed, state));
 

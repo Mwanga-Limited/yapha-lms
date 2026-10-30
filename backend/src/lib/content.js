@@ -1,3 +1,4 @@
+import { currentTenant, settingsOf } from './tenant.js';
 import { z } from 'zod';
 
 /*
@@ -11,9 +12,9 @@ import { z } from 'zod';
  * Item ids are stable across versions so learner progress survives re-approval.
  */
 
-export const PASS_MARK = 70;      // QZ-01
-export const MAX_ATTEMPTS = 3;    // QZ-01
-export const LOCK_HOURS = 24;     // QZ-02
+// Quiz rules (QZ-01/QZ-02) are per organisation: see settings.quiz in lib/tenant.js.
+// Defaults: 70% pass mark, 3 attempts, then a 24-hour lock.
+export const quizRules = () => settingsOf(currentTenant()).quiz;
 
 const itemId = z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/, 'Invalid id');
 const text = (max) => z.string().max(max).default('');
@@ -147,7 +148,7 @@ export function gradeQuiz(quiz, answers) {
   });
   const correct = results.filter((r) => r.correct).length;
   const score = quiz.questions.length ? Math.round((correct / quiz.questions.length) * 10000) / 100 : 0;
-  return { score, passed: score >= PASS_MARK, results, correct, total: quiz.questions.length };
+  return { score, passed: score >= quizRules().passMark, results, correct, total: quiz.questions.length };
 }
 
 /** Progress for a course: all lessons + quizzes count toward the bar; the rule decides completion (CC-01). */

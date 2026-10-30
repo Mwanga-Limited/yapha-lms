@@ -54,15 +54,15 @@ export function CourseDetail() {
           </ul>
           {course.status !== 'published' && <p><StatusBadge status={course.status} /> <span className="muted">This course is not in the catalog.</span></p>}
           <div className="detail-cta">
-             {viewer.enrolled && user?.role === 'student' ? (
+            {viewer.enrolled && user?.role === 'student' ? (
               <Link className="btn btn-primary btn-lg" to={`/learn/${id}`}>{viewer.completed ? 'Review the course' : 'Continue learning'}</Link>
-             
-                ) : course.status === 'published' && !viewer.canManage && (!user || user.role === 'student') ? (
+            ) : course.status === 'published' && !viewer.canManage && (!user || user.role === 'student') ? (
               <Button className="btn-lg" busy={busy} onClick={enrol} disabled={!!user && !user.emailVerified}>Enrol for free</Button>
             ) : null}
             {viewer.canManage && <Link className="btn btn-secondary" to={user?.id === course.teacherId ? `/teach/courses/${id}` : `/admin/courses/${id}`}>Manage course</Link>}
           </div>
-          {user && !user.emailVerified && !viewer.enrolled && <Alert tone="warn">Verify your email to enrol. We sent you a link when you signed up.</Alert>}
+          {user && user.role !== 'student' && !viewer.canManage && <p className="muted">Courses and certificates are for student accounts. You are signed in as {user.role === 'admin' ? 'an Admin' : 'a Teacher'}.</p>}
+          {user && user.role === 'student' && !user.emailVerified && !viewer.enrolled && <Alert tone="warn">Verify your email to enrol. We sent you a link when you signed up.</Alert>}
         </div>
         <div className="detail-thumb"><Thumb url={course.thumbnailUrl} title={course.title} /></div>
       </section>

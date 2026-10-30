@@ -144,6 +144,7 @@ export function ProgressBar({ percent, label }: { percent: number; label?: strin
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Draft', in_review: 'In review', rejected: 'Rejected', approved: 'Approved', published: 'Published',
   unpublished: 'Unpublished', archived: 'Archived', superseded: 'Superseded', pending: 'Pending', declined: 'Declined',
+  active: 'Active', suspended: 'Suspended',
 };
 export function StatusBadge({ status }: { status: CourseStatus | string }) {
   return <span className={`badge badge-${status}`}>{STATUS_LABEL[status] ?? status}</span>;
@@ -225,6 +226,9 @@ export function timeAgo(d: string) {
   return fmtDate(d);
 }
 
+/** Name shown after page titles: the organisation's name, or the platform's. */
+let siteName = 'Learn';
+export const setSiteName = (n: string) => { siteName = n; };
 export function useDocumentTitle(title: string) {
-  useEffect(() => { document.title = title ? `${title} — Learn` : 'Learn'; }, [title]);
+  useEffect(() => { document.title = title ? `${title} — ${siteName}` : siteName; }, [title]);
 }

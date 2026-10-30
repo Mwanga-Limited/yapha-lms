@@ -22,10 +22,29 @@ import { Dashboard } from './pages/student/Dashboard';
 import { Player } from './pages/student/Player';
 import { CourseEditor } from './pages/teacher/CourseEditor';
 import { TeachHome } from './pages/teacher/TeachHome';
-import { Empty } from './ui';
+import { AdminSettings } from './pages/admin/Settings';
+import { useAuth } from './auth';
+import { Empty, Loading } from './ui';
 import { Link } from 'react-router-dom';
 
+/** Shown instead of the site when the organisation in the address doesn't exist or is suspended. */
+function TenantUnavailable({ reason }: { reason: 'not_found' | 'suspended' }) {
+  return (
+    <main className="wrap main">
+      <Empty title={reason === 'not_found' ? 'We could not find this organisation' : 'This organisation is suspended'}>
+        <p>{reason === 'not_found'
+          ? 'Check the address you were given. It looks like /t/your-organisation.'
+          : 'Its learning site is temporarily unavailable. Contact your organisation or the platform administrator.'}</p>
+        <a className="btn btn-primary" href="/">Find your organisation</a>
+      </Empty>
+    </main>
+  );
+}
+
 export function App() {
+  const { tenant, tenantError, loading } = useAuth();
+  if (tenantError) return <TenantUnavailable reason={tenantError} />;
+  if (loading || !tenant) return <main className="wrap main"><Loading /></main>;
   return (
     <Routes>
       <Route element={<Layout />}>
@@ -39,11 +58,11 @@ export function App() {
         <Route path="verify" element={<VerifyCertificate />} />
         <Route path="verify/:code" element={<VerifyCertificate />} />
 
-       <Route path="dashboard" element={<Guard roles={['student']}><Dashboard /></Guard>} />
-        <Route path="profile" element={<Guard><Profile /></Guard>} />
-        <Route path="notifications" element={<Guard><Notifications /></Guard>} />
+        <Route path="dashboard" element={<Guard roles={['student']}><Dashboard /></Guard>} />
+        <Route path="profile" element={<Guard personal><Profile /></Guard>} />
+        <Route path="notifications" element={<Guard personal><Notifications /></Guard>} />
 
-        <Route path="teach" element={<Guard><TeachHome /></Guard>} />
+        <Route path="teach" element={<Guard personal><TeachHome /></Guard>} />
         <Route path="teach/courses/:id" element={<Guard roles={['teacher', 'admin']}><CourseEditor /></Guard>} />
 
         <Route path="admin" element={<Guard roles={['admin']}><AdminDashboard /></Guard>} />
@@ -54,6 +73,7 @@ export function App() {
         <Route path="admin/courses/:id" element={<Guard roles={['admin']}><AdminCourse /></Guard>} />
         <Route path="admin/certificates" element={<Guard roles={['admin']}><AdminCertificates /></Guard>} />
         <Route path="admin/audit" element={<Guard roles={['admin']}><AdminAudit /></Guard>} />
+        <Route path="admin/settings" element={<Guard roles={['admin']}><AdminSettings /></Guard>} />
         <Route path="*" element={<Empty title="This page does not exist"><Link to="/">Browse courses</Link></Empty>} />
       </Route>
       {/* The course player uses the full screen */}

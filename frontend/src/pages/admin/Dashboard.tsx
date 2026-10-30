@@ -14,6 +14,7 @@ export const adminLinks = [
   { to: '/admin/courses', label: 'All courses' },
   { to: '/admin/certificates', label: 'Certificates' },
   { to: '/admin/audit', label: 'Audit log' },
+  { to: '/admin/settings', label: 'Settings' },
 ];
 
 export function AdminNav() {

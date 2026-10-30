@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom';
 import { api, type Notification } from '../api';
+import { useAuth } from '../auth';
 import { Button, Empty, Loading, fmtDateTime, useAction, useDocumentTitle, useLoad } from '../ui';
 
 export function Notifications() {
   useDocumentTitle('Notifications');
+  const { user } = useAuth();
   const { data, loading, reload } = useLoad(() => api<{ items: Notification[]; unread: number }>('account', 'notifications', { limit: 100 }), []);
   const { busy, run } = useAction();
   return (
@@ -13,7 +15,7 @@ export function Notifications() {
         {!!data?.unread && <Button variant="secondary" small busy={busy} onClick={() => run(async () => { await api('account', 'markNotificationsRead'); await reload(); })}>Mark all as read</Button>}
       </div>
       {loading && !data && <Loading />}
-      {data && data.items.length === 0 && <Empty title="No notifications yet">Course decisions, quiz results and certificates show up here.</Empty>}
+      {data && data.items.length === 0 && <Empty title="No notifications yet">{user?.role === 'student' ? 'Enrolments, quiz results and certificates show up here.' : 'Course reviews, applications and other updates show up here.'}</Empty>}
       <ul className="notif-list">
         {data?.items.map((n) => (
           <li key={n.id} className={n.read_at ? '' : 'unread'}>

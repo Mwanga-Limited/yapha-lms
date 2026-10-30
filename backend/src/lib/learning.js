@@ -5,6 +5,7 @@ import { audit } from './audit.js';
 import { computeProgress } from './content.js';
 import { emails } from './mailer.js';
 import { notify } from './notify.js';
+import { currentTenant, settingsOf, tenantName } from './tenant.js';
 
 export async function loadCourseWithLive(db, courseId) {
   const { rows } = await db.query(
@@ -54,14 +55,14 @@ export async function checkCompletion(db, ctx, enrollment, course) {
   if (!progress.ruleMet) return null;
 
   const { rows: [learner] } = await db.query(`SELECT * FROM users WHERE id = $1`, [enrollment.user_id]);
-  if (learner.role !== 'student') return null;
+  if (learner.role !== 'student') return null;   // certificates are issued to Students only
   await db.query(`UPDATE enrollments SET completed_at = now() WHERE id = $1`, [enrollment.id]);
   let cert = null;
   for (let i = 0; i < 5 && !cert; i++) {
     const { rows } = await db.query(
-      `INSERT INTO certificates (enrollment_id, user_id, course_id, code, recipient_name, course_title, teacher_name)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (code) DO NOTHING RETURNING *`,
-      [enrollment.id, learner.id, course.id, certificateCode(), learner.name, course.title, course.teacher_name]);
+      `INSERT INTO certificates (enrollment_id, user_id, course_id, code, recipient_name, course_title, teacher_name, issuer_name, member_code)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (code) DO NOTHING RETURNING *`,
+      [enrollment.id, learner.id, course.id, certificateCode(), learner.name, course.title, course.teacher_name, tenantName(currentTenant()), learner.member_code]);
     cert = rows[0] ?? null;
   }
   await audit(db, ctx, { action: 'certificate.issue', targetType: 'certificate', targetId: cert.id, newValues: { code: cert.code, course: course.title, learner: learner.email } });
@@ -79,20 +80,25 @@ export async function revokeCertificateForEnrollment(db, ctx, enrollmentId, reas
   return rows[0] ?? null;
 }
 
-/** Render a certificate as a landscape A4 PDF. */
-export function certificatePdf(cert) {
+/** Render a certificate as a landscape A4 PDF, branded for the issuing organisation. */
+export function certificatePdf(cert, { tenant, logoPath = null } = {}) {
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 0, info: { Title: `Certificate ${cert.code}` } });
   const W = doc.page.width, H = doc.page.height;
-  const green = '#17324d', gold = '#e0b72a', ink = '#1c1c1c';
+  const green = '#17324d', gold = settingsOf(tenant).branding.accentColor, ink = '#1c1c1c';
+  const issuer = cert.issuer_name || tenantName(tenant);
 
   doc.rect(0, 0, W, H).fill('#fbfbf8');
   doc.lineWidth(3).rect(28, 28, W - 56, H - 56).stroke(green);
   doc.lineWidth(0.8).rect(38, 38, W - 76, H - 76).stroke(gold);
 
-  doc.fillColor(green).font('Helvetica-Bold').fontSize(13).text('E-LEARNING PLATFORM', 0, 78, { align: 'center', characterSpacing: 4 });
+  if (logoPath) {
+    try { doc.image(logoPath, W / 2 - 60, 46, { fit: [120, 28], align: 'center', valign: 'center' }); } catch { /* unsupported image: skip */ }
+  }
+  doc.fillColor(green).font('Helvetica-Bold').fontSize(13).text(issuer.toUpperCase(), 0, 80, { align: 'center', characterSpacing: 3 });
   doc.fillColor(ink).font('Times-Roman').fontSize(40).text('Certificate of Completion', 0, 112, { align: 'center' });
   doc.font('Helvetica').fontSize(13).fillColor('#555').text('This certifies that', 0, 182, { align: 'center' });
   doc.font('Times-Bold').fontSize(34).fillColor(green).text(cert.recipient_name, 60, 208, { align: 'center', width: W - 120 });
+  if (cert.member_code) doc.font('Helvetica').fontSize(9).fillColor('#777').text(`Learner ID ${cert.member_code}`, 0, 248, { align: 'center' });
   doc.font('Helvetica').fontSize(13).fillColor('#555').text('has successfully completed the course', 0, 262, { align: 'center' });
   doc.font('Times-Italic').fontSize(24).fillColor(ink).text(cert.course_title, 80, 288, { align: 'center', width: W - 160 });
 
@@ -107,7 +113,7 @@ export function certificatePdf(cert) {
   doc.font('Helvetica').fontSize(10).fillColor('#666').text('Date issued', W - 320, y + 24, { width: 200, align: 'center' });
 
   doc.font('Helvetica').fontSize(10).fillColor('#555')
-    .text(`Verification code: ${cert.code}   ·   Verify at ${config.appUrl}/verify/${cert.code}`, 0, H - 72, { align: 'center' });
+    .text(`Verification code: ${cert.code}   ·   Verify at ${config.appUrl}/t/${tenant?.slug ?? ''}/verify/${cert.code}`, 0, H - 72, { align: 'center' });
   doc.end();
   return doc;
 }

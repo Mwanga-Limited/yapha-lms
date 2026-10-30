@@ -3,15 +3,16 @@ import { query, tx } from '../db.js';
 import { actionEndpoint, id, page, reqStr, str } from '../lib/actions.js';
 import { audit } from '../lib/audit.js';
 import {
-  MAX_ATTEMPTS, computeProgress, emptyContent, findItem, lessonsOf, normaliseContent, outlineOf, quizzesOf, submissionProblems,
+  computeProgress, quizRules, emptyContent, findItem, lessonsOf, normaliseContent, outlineOf, quizzesOf, submissionProblems,
 } from '../lib/content.js';
+import { apiBase } from '../lib/tenant.js';
 import { fail, notFound } from '../lib/errors.js';
 import { notify, notifyAdmins } from '../lib/notify.js';
 import { signedFileUrl } from '../lib/security.js';
 import { learnerState } from '../lib/learning.js';
 
 const PAGE_SIZE = 12;
-const fileUrl = (fid) => (fid ? `/api/files/${fid}` : null);
+const fileUrl = (fid) => (fid ? `${apiBase()}/files/${fid}` : null);
 const likeEscape = (s) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 export function lessonPayload(lesson) {
@@ -185,7 +186,7 @@ export const courseRoutes = actionEndpoint({
       const [live, draft, reviews, teacher, learners] = await Promise.all([
         c.live_version_id ? query(`SELECT * FROM course_versions WHERE id = $1`, [c.live_version_id]) : { rows: [] },
         draftVersion({ query }, c).then((v) => ({ rows: v ? [v] : [] })),
-        query(`SELECT r.*, u.name AS admin_name FROM course_reviews r JOIN users u ON u.id = r.admin_id WHERE r.course_id = $1 ORDER BY r.created_at DESC`, [c.id]),
+        query(`SELECT r.*, coalesce(u.name, 'Platform administrator') AS admin_name FROM course_reviews r LEFT JOIN users u ON u.id = r.admin_id WHERE r.course_id = $1 ORDER BY r.created_at DESC`, [c.id]),
         query(`SELECT id, name, email FROM users WHERE id = $1`, [c.teacher_id]),
         query(`SELECT count(*)::int AS n FROM enrollments WHERE course_id = $1`, [c.id]),
       ]);
@@ -375,7 +376,7 @@ export const courseRoutes = actionEndpoint({
           quizzes: quizzes.map((q) => {
             const s = st.quizStates[q.id];
             const locked = s?.locked_until && new Date(s.locked_until) > new Date();
-            return { quizId: q.id, title: q.title, attemptsUsed: s?.attempts_used ?? 0, maxAttempts: MAX_ATTEMPTS, passed: !!s?.passed_at, bestScore: s?.best_score ?? null, lockedUntil: locked ? s.locked_until : null };
+            return { quizId: q.id, title: q.title, attemptsUsed: s?.attempts_used ?? 0, maxAttempts: quizRules().maxAttempts, passed: !!s?.passed_at, bestScore: s?.best_score ?? null, lockedUntil: locked ? s.locked_until : null };
           }),
         });
       }
@@ -396,7 +397,7 @@ export const courseRoutes = actionEndpoint({
       await db.query(`UPDATE quiz_states SET attempts_used = 0, locked_until = NULL, updated_at = now() WHERE enrollment_id = $1 AND quiz_id = $2`, [e.id, ctx.data.quizId]);
       await audit(db, ctx, { action: 'quiz.reset_attempts', targetType: 'enrollment', targetId: e.id,
         oldValues: { quizId: ctx.data.quizId, attemptsUsed: old.attempts_used, lockedUntil: old.locked_until }, newValues: { attemptsUsed: 0, lockedUntil: null } });
-      await notify(db, e.user_id, { type: 'quiz', title: 'Quiz attempts reset', body: `You have ${MAX_ATTEMPTS} new attempts in ${c.title}.`, link: `/learn/${c.id}` });
+      await notify(db, e.user_id, { type: 'quiz', title: 'Quiz attempts reset', body: `You have ${quizRules().maxAttempts} new attempts in ${c.title}.`, link: `/learn/${c.id}` });
       return { ok: true };
     }),
   },

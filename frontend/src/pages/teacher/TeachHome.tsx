@@ -1,13 +1,14 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, type CourseMeta, type VersionStatus } from '../../api';
-import { useAuth } from '../../auth';
+import { useAuth, useTenant } from '../../auth';
 import { Alert, Button, Empty, Field, Loading, StatusBadge, TextArea, fmtDate, useAction, useDocumentTitle, useLoad } from '../../ui';
 
 interface Application { id: string; bio: string; expertise: string; credential_url: string | null; status: 'pending' | 'approved' | 'declined'; decision_reason: string | null; reviewed_at: string | null; created_at: string }
 type MyCourse = CourseMeta & { learners: number; revision: { status: VersionStatus; versionNo: number } | null; hasLive: boolean; lastDecision: string | null; lastReason: string | null };
 
 function Apply() {
+  const tenant = useTenant();
   const { data, loading, reload } = useLoad(() => api<{ applications: Application[] }>('account', 'myApplications'), []);
   const [f, setF] = useState({ bio: '', expertise: '', credentialUrl: '' });
   const { busy, run } = useAction();
@@ -17,7 +18,7 @@ function Apply() {
 
   return (
     <>
-      <div className="page-head"><h1>Teach on Learn</h1><p className="lede">Share what you know. Every teacher is approved by an admin, and every course is reviewed before it goes live.</p></div>
+      <div className="page-head"><h1>Teach at {tenant.name}</h1><p className="lede">Share what you know. Every teacher is approved by an admin, and every course is reviewed before it goes live.</p></div>
       {latest?.status === 'pending' && (
         <Alert tone="info" title="Your application is being reviewed">
           Sent {fmtDate(latest.created_at)} for <strong>{latest.expertise}</strong>. We'll notify you and email you when an admin decides.

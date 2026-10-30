@@ -7,6 +7,7 @@ import { query, tx } from '../db.js';
 import { actionEndpoint, id, password, reqStr, str } from '../lib/actions.js';
 import { audit } from '../lib/audit.js';
 import { computeProgress, findItem } from '../lib/content.js';
+import { apiBase } from '../lib/tenant.js';
 import { fail } from '../lib/errors.js';
 import { notifyAdmins } from '../lib/notify.js';
 import { publicUser, setSession } from '../lib/security.js';
@@ -58,8 +59,6 @@ export const accountRoutes = actionEndpoint({
     run: async (ctx) => {
       if (ctx.user.totp_enabled) fail(400, 'Authenticator app is already enabled');
       const secret = authenticator.generateSecret();
-      
-      console.log(new Date().toISOString(), authenticator.generate(secret));
       await query(`UPDATE users SET totp_secret = $2 WHERE id = $1 AND NOT totp_enabled`, [ctx.user.id, secret]);
       const uri = authenticator.keyuri(ctx.user.email, 'E-Learning', secret);
       return { secret, uri, qr: await QRCode.toDataURL(uri, { margin: 1, width: 220 }) };
@@ -138,7 +137,7 @@ export const accountRoutes = actionEndpoint({
 
   /** Learner dashboard: my courses, progress, resume point, certificates. */
   dashboard: {
-    auth: 'student',
+    auth: ['student'],
     run: async (ctx) => {
       const { rows } = await query(
         `SELECT e.id AS enrollment_id, e.enrolled_at, e.completed_at, e.last_item_id, e.last_accessed_at,
@@ -158,7 +157,7 @@ export const accountRoutes = actionEndpoint({
         const last = r.last_item_id ? findItem(r.content, r.last_item_id) : null;
         courses.push({
           id: r.id, title: r.title, summary: r.summary, category: r.category, level: r.level, teacherName: r.teacher_name,
-          thumbnailUrl: r.thumbnail_file_id ? `/api/files/${r.thumbnail_file_id}` : null, courseStatus: r.status,
+          thumbnailUrl: r.thumbnail_file_id ? `${apiBase()}/files/${r.thumbnail_file_id}` : null, courseStatus: r.status,
           enrolledAt: r.enrolled_at, completedAt: r.completed_at, lastAccessedAt: r.last_accessed_at,
           resume: last ? { id: last.id, title: last.title, kind: last.kind } : null,
           progress: { percent: progress.percent, done: progress.done, total: progress.total },

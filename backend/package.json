@@ -8,12 +8,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "node --watch src/server.js",
+    "dev": "node --watch-path=src --watch-preserve-output src/server.js",
     "start": "node src/server.js",
     "migrate": "node src/scripts/migrate.js",
-    "seed:admin": "node src/scripts/seed-admin.js",
+    "seed:superadmin": "node src/scripts/seed-superadmin.js",
     "seed:demo": "node src/scripts/seed-demo.js",
-    "test": "node --test --test-concurrency=1 --test-reporter=spec test/*.test.js"
+    "test": "node --test --test-concurrency=1 --test-reporter=spec test/rules.test.js test/files-totp.test.js test/tenancy.test.js",
+    "test:coverage": "node --test --test-concurrency=1 --experimental-test-coverage --test-coverage-exclude=test/** test/rules.test.js test/files-totp.test.js test/tenancy.test.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

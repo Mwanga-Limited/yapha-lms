@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { authenticator } from 'otplib';
-import { agent, call, loginRoot, makeTeacher, pool, registerStudent, resetDb, sampleContent } from './helpers.js';
+import { agent, api, call, loginRoot, makeTeacher, pool, registerStudent, resetDb, sampleContent,
+} from './helpers.js';
 
 let root;
 before(async () => { await resetDb(); root = await loginRoot(); });
@@ -14,7 +15,7 @@ test('authenticator app (TOTP) 2FA for a Teacher', async () => {
   await call(t.a, 'account', 'totpEnable', { code: '123456' }).expect(400);
   await call(t.a, 'account', 'totpEnable', { code: authenticator.generate(setup.secret) }).expect(200);
   const a = agent();
-  const r = await call(a, 'auth', 'login', { email: t.email, password: 'Password123' }).expect(200);
+  const r = await call(a, 'auth', 'login', { email: t.email, password: 'Password123!' }).expect(200);
   assert.equal(r.body.mfa.method, 'totp');
   await call(a, 'auth', 'verifyMfa', { token: r.body.mfa.token, code: authenticator.generate(setup.secret) }).expect(200);
   assert.equal((await call(a, 'auth', 'me')).body.user.totpEnabled, true);
@@ -22,12 +23,12 @@ test('authenticator app (TOTP) 2FA for a Teacher', async () => {
 
 test('private lesson files need a signed URL from an enrolled session', async () => {
   const t = await makeTeacher('File Teacher', root);
-  const up = await t.a.post('/api/upload').field('purpose', 'lesson_file').attach('file', Buffer.from('%PDF-1.4 test'), { filename: 'notes.pdf', contentType: 'application/pdf' }).expect(200);
+  const up = await t.a.post(api('upload')).field('purpose', 'lesson_file').attach('file', Buffer.from('%PDF-1.4 test'), { filename: 'notes.pdf', contentType: 'application/pdf' }).expect(200);
   const fileId = up.body.file.id;
   assert.equal(up.body.file.url, null);
   const s = await registerStudent('File Student');
-  await s.a.post('/api/upload').field('purpose', 'lesson_file').attach('file', Buffer.from('x'), { filename: 'x.pdf', contentType: 'application/pdf' }).expect(403);
-  await s.a.post('/api/upload').field('purpose', 'photo').attach('file', Buffer.from('x'), { filename: 'x.exe', contentType: 'application/x-msdownload' }).expect(400);
+  await s.a.post(api('upload')).field('purpose', 'lesson_file').attach('file', Buffer.from('x'), { filename: 'x.pdf', contentType: 'application/pdf' }).expect(403);
+  await s.a.post(api('upload')).field('purpose', 'photo').attach('file', Buffer.from('x'), { filename: 'x.exe', contentType: 'application/x-msdownload' }).expect(400);
 
   const content = sampleContent();
   content.sections[0].items.push({ id: 'f1', kind: 'lesson', title: 'Notes', type: 'file', fileId });
@@ -40,7 +41,7 @@ test('private lesson files need a signed URL from an enrolled session', async ()
   await call(root, 'admin', 'approveCourse', { versionId: v.versionId }).expect(200);
   await call(t.a, 'courses', 'publish', { id }).expect(200);
 
-  await agent().get(`/api/files/${fileId}`).expect(403);
+  await agent().get(`${api('files')}/${fileId}`).expect(403);
   await call(s.a, 'learn', 'enrol', { courseId: id }).expect(200);
   const l = (await call(s.a, 'learn', 'lesson', { courseId: id, lessonId: 'f1' }).expect(200)).body.lesson;
   assert.match(l.fileUrl, /sig=/);

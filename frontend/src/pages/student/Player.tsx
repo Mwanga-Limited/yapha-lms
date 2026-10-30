@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ApiError, api, type LessonPayload, type OutlineItem, type OutlineSection, type Progress } from '../../api';
+import { ApiError, api, type LessonPayload, type OutlineItem, type OutlineSection, type Progress, apiUrl } from '../../api';
 import { LessonView } from '../../components/LessonView';
 import { Alert, Button, Empty, Loading, ProgressBar, useAction, useDocumentTitle, useLoad, useToast } from '../../ui';
 import { QuizView, type QuizSubmitted } from './QuizView';
@@ -117,7 +117,7 @@ export function Player() {
                 <>
                   <span><strong>You completed this course.</strong> Certificate <code>{data.certificate.code}</code></span>
                   <span className="row-gap">
-                    <a className="btn btn-primary btn-sm" href={`/api/certificates/${data.certificate.code}?format=pdf&download`}>Download PDF</a>
+                    <a className="btn btn-primary btn-sm" href={apiUrl(`/certificates/${data.certificate.code}?format=pdf&download`)}>Download PDF</a>
                     <Link className="btn btn-secondary btn-sm" to={`/verify/${data.certificate.code}`}>Verification page</Link>
                   </span>
                 </>

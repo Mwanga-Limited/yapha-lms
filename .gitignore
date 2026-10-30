@@ -3,4 +3,3 @@ dist/
 uploads/
 .env
 *.log
-*.tsbuildinfo
