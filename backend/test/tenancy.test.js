@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import {
   OTHER_TENANT, ROOT, SUPER, TENANT, agent, api, auditCount, call, callIn, codeFromMail, correctAnswers, loginPrivileged,
-  loginRoot, loginSuper, makeTeacher, outbox, pool, publishedCourse, registerStudent, resetDb, tenantId, tokenFromMail,
+  config, loginRoot, loginSuper, makeTeacher, outbox, pool, publishedCourse, registerStudent, resetDb, tenantId, tokenFromMail,
 } from './helpers.js';
 
 const A = TENANT;        // "alpha"
@@ -168,7 +168,7 @@ describe('Per-organisation configuration', () => {
     assert.match(inv.body.user.memberCode, /^ALPHA-/);
     const mail = outbox.findLast((m) => m.to === 'ifeoma@test.dev');
     assert.match(mail.subject, /invited to alpha org/);
-    assert.match(mail.text, /\/t\/alpha\/reset-password\?token=/);
+    assert.match(mail.text, /5173\/alpha\/reset-password\?token=/);
     const token = mail.text.match(/token=([\w-]+)/)[1];
     await callIn(B, agent(), 'auth', 'resetPassword', { token, password: 'Invited123!' }).expect(400);     // not valid in another organisation
     await callIn(A, agent(), 'auth', 'resetPassword', { token, password: 'Invited123!' }).expect(200);
@@ -219,20 +219,41 @@ describe('Platform super admin', () => {
     await call(agent(), 'platform', 'login', ROOT).expect(401);
   });
 
-  test('creates an organisation with its first Admin, who is invited and protected', async () => {
-    const su = await loginSuper();
-    await call(su, 'platform', 'createTenant', { name: 'Reserved', slug: 'platform', adminName: 'X', adminEmail: 'x@test.dev' }).expect(400);
-    await call(su, 'platform', 'createTenant', { name: 'Dup', slug: A, adminName: 'X', adminEmail: 'x@test.dev' }).expect(409);
-    const c = await call(su, 'platform', 'createTenant', { name: 'Gamma School', slug: 'gamma', adminName: 'Gina Admin', adminEmail: 'gina@gamma.test' }).expect(200);
-    assert.match(c.body.admin.memberCode, /^GAMMA-000001$/);
-    const token = tokenFromMail('gina@gamma.test', 'reset-password');
-    await callIn('gamma', agent(), 'auth', 'resetPassword', { token, password: 'GinaPassword1!' }).expect(200);
+  test('organisations register themselves; the person registering becomes the protected first Admin', async () => {
+    const org = (action, data = {}) => agent().post('/api/organisations').send({ action, data });
+    assert.equal((await org('info')).body.signupOpen, true);
+    assert.deepEqual((await org('checkAddress', { slug: A })).body.available, false);
+    assert.equal((await org('checkAddress', { slug: 'platform' })).body.available, false);
+    assert.equal((await org('checkAddress', { slug: 'gamma' })).body.available, true);
+    const base = { organisationName: 'Gamma School', slug: 'gamma', name: 'Gina Admin', email: 'gina@gamma.test', password: 'GinaPassword1!' };
+    await org('register', { ...base, slug: 'platform' }).expect(400);
+    await org('register', { ...base, slug: A }).expect(409);
+    await org('register', { ...base, password: 'weak' }).expect(400);
+    const r = await org('register', base).expect(200);
+    assert.equal(r.body.organisation.url, '/gamma');
+    assert.match(r.body.admin.memberCode, /^GAMMA-000001$/);
+    // The new organisation is live straight away; its first Admin signs in with two steps (AD-07).
+    tokenFromMail('gina@gamma.test', 'verify-email');
     const gina = await loginPrivileged('gina@gamma.test', 'GinaPassword1!', 'gamma');
     const me = (await callIn('gamma', gina, 'auth', 'me')).body.user;
     assert.equal(me.role, 'admin');
     assert.equal(me.isRoot, true);
-    assert.equal((await call(su, 'platform', 'tenant', { id: c.body.tenant.id })).body.admins[0].activated, true);
-    assert.ok((await auditCount('platform.tenant_create')) >= 1);
+    // AD-04: nobody can demote or deactivate the first Admin.
+    const su = await loginSuper();
+    await callIn('gamma', su, 'admin', 'changeRole', { userId: me.id, role: 'student' }).expect(403);
+    // Gamma sees only its own data; the super admin is told and can oversee it.
+    const gUsers = (await callIn('gamma', gina, 'admin', 'users')).body.users;
+    assert.deepEqual(gUsers.map((u) => u.email), ['gina@gamma.test']);
+    assert.ok(outbox.some((m) => m.to === SUPER.email && /New organisation registered: Gamma School/.test(m.subject)));
+    assert.ok((await auditCount('platform.tenant_register')) >= 1);
+    // The console can no longer create organisations.
+    await call(su, 'platform', 'createTenant', { name: 'X', slug: 'x1', adminName: 'X', adminEmail: 'x@test.dev' }).expect(400);
+    // Registration can be switched off (ORG_SIGNUP=closed).
+    config.orgSignupOpen = false;
+    try {
+      assert.equal((await org('info')).body.signupOpen, false);
+      await org('register', { ...base, slug: 'delta', email: 'd@delta.test' }).expect(403);
+    } finally { config.orgSignupOpen = true; }
   });
 
   test('acts inside an organisation as an Admin, audited as superadmin, still bound by AD-04', async () => {

@@ -7,7 +7,7 @@
   "item": [
     {
       "name": "00 Platform super admin",
-      "description": "POST /api/platform. The super admin sees every organisation. Created only by `npm run seed:superadmin`.",
+      "description": "POST /api/platform. The super admin sees and oversees every organisation (created only by `npm run seed:superadmin`). Organisations register themselves at POST /api/organisations.",
       "item": [
         {
           "name": "Sign in as superadmin (step 1: password)",
@@ -258,7 +258,7 @@
           }
         },
         {
-          "name": "Create an organisation with its first Admin",
+          "name": "Web address check: taken",
           "event": [
             {
               "listen": "test",
@@ -266,9 +266,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "const b = pm.response.json();",
-                  "pm.test('New organisation and its first Admin (invited by email)', () => { pm.expect(b.tenant.slug).to.match(/^pm-/); pm.expect(b.admin.memberCode).to.match(/-000001$/); });",
-                  "pm.collectionVariables.set('newTenantId', b.tenant.id);"
+                  "pm.test('{{tenant}} is not available', () => pm.expect(pm.response.json().available).to.eql(false));"
                 ]
               }
             }
@@ -283,7 +281,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"action\": \"createTenant\",\n  \"data\": {\n    \"name\": \"Postman Org {{$timestamp}}\",\n    \"slug\": \"pm-{{$timestamp}}\",\n    \"adminName\": \"Postman Admin\",\n    \"adminEmail\": \"pm-admin-{{$timestamp}}@example.com\"\n  }\n}",
+              "raw": "{\n  \"action\": \"checkAddress\",\n  \"data\": {\n    \"slug\": \"{{tenant}}\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -291,15 +289,61 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/platform",
+              "raw": "{{baseUrl}}/api/organisations",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "platform"
+                "organisations"
               ]
             }
+          }
+        },
+        {
+          "name": "An organisation registers itself (public)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('New organisation; the person registering is its first Admin', () => { pm.expect(b.organisation.slug).to.match(/^pm-/); pm.expect(b.organisation.url).to.eql('/' + b.organisation.slug); pm.expect(b.admin.memberCode).to.match(/-000001$/); });",
+                  "pm.collectionVariables.set('newTenantId', b.organisation.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"register\",\n  \"data\": {\n    \"organisationName\": \"Postman Org {{$timestamp}}\",\n    \"slug\": \"pm-{{$timestamp}}\",\n    \"name\": \"Postman Admin\",\n    \"email\": \"pm-admin-{{$timestamp}}@example.com\",\n    \"password\": \"Postman123!\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/organisations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organisations"
+              ]
+            },
+            "description": "POST /api/organisations needs no sign-in. Turn it off with ORG_SIGNUP=closed."
           }
         },
         {
@@ -325,7 +369,49 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"action\": \"createTenant\",\n  \"data\": {\n    \"name\": \"Bad\",\n    \"slug\": \"platform\",\n    \"adminName\": \"X\",\n    \"adminEmail\": \"x@example.com\"\n  }\n}",
+              "raw": "{\n  \"action\": \"register\",\n  \"data\": {\n    \"organisationName\": \"Bad\",\n    \"slug\": \"platform\",\n    \"name\": \"X\",\n    \"email\": \"x@example.com\",\n    \"password\": \"Postman123!\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/organisations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "organisations"
+              ]
+            }
+          }
+        },
+        {
+          "name": "The console can no longer create organisations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Unknown action: 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"createTenant\",\n  \"data\": {\n    \"name\": \"X\",\n    \"slug\": \"x-console\",\n    \"adminName\": \"X\",\n    \"adminEmail\": \"x@example.com\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"

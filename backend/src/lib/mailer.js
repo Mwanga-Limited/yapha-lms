@@ -44,10 +44,15 @@ export async function sendMail({ to, subject, title, paragraphs = [], action }) 
   }
 }
 
-// Links point into the organisation's own space: /t/<organisation>/...
-const url = (p) => `${config.appUrl}${currentTenant() ? `/t/${currentTenant().slug}` : '/platform'}${p}`;
+// Links point into the organisation's own space: /<organisation>/...
+const url = (p) => `${config.appUrl}${currentTenant() ? `/${currentTenant().slug}` : '/platform'}${p}`;
 
 export const emails = {
+  // Platform-level: tells the super admin(s) that an organisation registered itself.
+  organisationRegistered: (to, t, admin) => sendMail({ to, subject: `New organisation registered: ${t.name}`, title: 'A new organisation registered',
+    paragraphs: [`${t.name} registered itself at /${t.slug}.`, `First Admin: ${admin.name} (${admin.email}).`,
+      'No action is needed. You can review or suspend it in the platform console.'],
+    action: { label: 'Open in the console', url: `${config.appUrl}/platform/organisations/${t.id}` } }),
   invite: (u, token, inviterName) => sendMail({ to: u.email, subject: `You're invited to ${tenantName(currentTenant())}`, title: `Welcome to ${tenantName(currentTenant())}`,
     paragraphs: [`${inviterName} invited you to join ${tenantName(currentTenant())} on the e-learning platform as a ${u.role}.`,
       `Your member ID is ${u.member_code ?? 'shown after you sign in'}.`, 'Choose a password to activate your account. This link expires in 7 days.'],

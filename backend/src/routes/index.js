@@ -12,6 +12,7 @@ import { certificateHandler } from './certificates.js';
 import { courseRoutes } from './courses.js';
 import { fileHandler, uploadHandler, uploadMiddleware } from './files.js';
 import { learnRoutes } from './learn.js';
+import { organisationRoutes } from './organisations.js';
 import { platformRoutes } from './platform.js';
 
 /**
@@ -54,6 +55,17 @@ export function tenantApi() {
   r.post('/upload', uploadMiddleware, scoped(uploadHandler));
   r.get('/files/:id', scoped(fileHandler));
   r.get('/certificates/:code', scoped(certificateHandler));
+  return r;
+}
+
+/** /api/organisations — public: register a new organisation (its first Admin is the person registering). */
+export function organisationsApi() {
+  const r = express.Router();
+  // Registering creates an organisation, so it gets a much tighter limit than other public actions.
+  const registerLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: config.orgSignupPerHour, standardHeaders: 'draft-7', legacyHeaders: false,
+    skip: (req) => req.body?.action !== 'register',
+    message: { error: 'Too many organisations registered from this network. Please try again in an hour.' } });
+  r.post('/', authLimiter(), registerLimiter, scoped(organisationRoutes));
   return r;
 }
 

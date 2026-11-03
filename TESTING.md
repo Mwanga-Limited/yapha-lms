@@ -5,7 +5,7 @@ There are three layers of testing. Each one proves something different:
 | Layer | What it proves | Time | Who |
 |---|---|---|---|
 | **1. Automated tests** (`npm test`) | Every business rule holds, against a real PostgreSQL database. Runs the same way every time. | ~5 s | Anyone, repeatable |
-| **2. Postman collection** | The HTTP API behaves as documented, end to end, across all roles, the super admin and two organisations. 120 requests and 196 checks. | ~1 min | Engineer reviewing the API |
+| **2. Postman collection** | The HTTP API behaves as documented, end to end, across all roles, the super admin and two organisations. 122 requests and 199 checks. | ~1 min | Engineer reviewing the API |
 | **3. Frontend walkthrough** | The screens work for real people on desktop and mobile. | ~30 min | Anyone, by hand |
 
 Rule IDs (AD-, CR-, EN-, QZ-, CC-) come from the work plan; they now apply inside each organisation. Isolation between organisations is tested separately (section 1 and Postman folder 10). The [coverage matrix](#4-rule-coverage-matrix) at the end shows where each rule is tested.
@@ -14,13 +14,19 @@ Rule IDs (AD-, CR-, EN-, QZ-, CC-) come from the work plan; they now apply insid
 
 ## 0. One-time setup
 
-This assumes the app already runs locally (see README.md): API on `http://localhost:4000`, frontend on `http://localhost:5173`, and `npm run seed:superadmin` and `npm run seed:demo` already done. The demo creates two organisations: **acme** (open sign-up, default quiz rules) and **globex** (invite-only, 80% pass mark, 2 attempts).
+This assumes the app already runs locally (see README.md): API on `http://localhost:4000`, frontend on `http://localhost:5173`, and `npm run seed:superadmin` and `npm run seed:demo` already done. The demo creates two organisations: **acme** (open sign-up, default quiz rules) and **globex** (open sign-up, 80% pass mark, 2 attempts).
 
 Create a **separate** database for the automated tests. It is erased on every run.
 
 ```powershell
 createdb -U postgres -p 5000 elearning_test
+```
 
+Add this line to `backend/.env`, with your own password and port:
+
+```
+TEST_DATABASE_URL=postgres://postgres:YOUR_PASSWORD@localhost:5000/elearning_test
+```
 
 For safety, the tests refuse to run if this points at the main database, or if the database name does not contain "test".
 
@@ -45,7 +51,7 @@ What runs:
   - **API isolation.** Courses, users, reviews, audit entries, certificates and files of another organisation are invisible or "not found".
   - **Database isolation.** Raw SQL as the app role proves PostgreSQL itself enforces it, through row-level security.
   - **Per-organisation settings.** Quiz rules, allowed domains, invite-only, invitations, student 2FA and branding each work per organisation.
-  - **Super admin.** Two-step sign-in, a view across organisations, creating an organisation with its first Admin, acting inside an organisation (audited, still bound by AD-04), and suspending one.
+  - **Super admin.** Two-step sign-in, a view across organisations, an organisation registering itself (its registrant becomes the protected first Admin, the super admin is told, the console can't create organisations, registration can be switched off), acting inside an organisation (audited, still bound by AD-04), and suspending one.
 
 The tests use real HTTP requests (supertest) against the real Express app and a real PostgreSQL database. They also check that the **database itself** refuses forbidden changes:
 
@@ -108,7 +114,7 @@ npx newman run postman/E-Learning.postman_collection.json \
   --env-var superadminTotpSecret=SUPER_KEY --env-var adminTotpSecret=ADMIN_KEY --env-var teacherTotpSecret=TEACHER_KEY
 ```
 
-Expected summary: `requests 120 / 0 failed`, `assertions 196 / 0 failed`.
+Expected summary: `requests 122 / 0 failed`, `assertions 199 / 0 failed`.
 
 The collection is safe to run repeatedly. Each run creates its own new organisation (then suspends it), student and course (then archives it).
 
@@ -116,7 +122,7 @@ The collection is safe to run repeatedly. Each run creates its own new organisat
 
 | Folder | Role | Shows |
 |---|---|---|
-| 00 Platform super admin | super admin | Two-step sign-in, overview of every organisation with counts, one organisation's settings and Admins (with member IDs), people filtered to one organisation, creating an organisation with its first Admin, reserved web address refused, suspending, platform-only audit log, organisation Admin refused |
+| 00 Platform super admin | super admin | Two-step sign-in, overview of every organisation with counts, one organisation's settings and Admins (with member IDs), people filtered to one organisation, web address check, an organisation registering itself (public), reserved web address refused, the console can no longer create organisations, suspending, platform-only audit log, organisation Admin refused |
 | 01 Public catalogue & sign-up | anonymous → new student | Catalogue, course page, free preview vs locked lesson (EN-02), weak password refused, sign-up is always Student (AD-02), unverified user can't enrol (EN-03), role checks, teacher application (AD-08), wrong password, reset request |
 | 02 Teacher builds and submits | teacher | 2FA (AD-07), draft course, empty submit refused (CR-01), details, lessons, quiz and completion rule, submit, teacher can't approve or publish (CR-02), content locked in review |
 | 03 Admin rejects with a reason | admin | Review queue, full preview with answer key, rejection needs a reason (CR-03) |
@@ -140,7 +146,7 @@ Each organisation has 8 endpoints: `auth`, `account`, `courses`, `learn`, `admin
 
 Use two browsers, or one normal and one private window, so you can be two people at once. While running locally, every email appears in the **API terminal**: verification links, reset links and 2FA codes.
 
-Use **http://localhost:5173/t/acme** for sections A–D. Demo accounts there: `admin@acme.example.com`, `teacher@example.com` and `student@example.com`, all with password `Password123`. Section E covers organisations and the super admin.
+Use **http://localhost:5173/acme** for sections A–D. Demo accounts there: `admin@acme.example.com`, `teacher@example.com` and `student@example.com`, all with password `Password123`. Section E covers organisations and the super admin.
 
 ### A. New visitor and student
 
@@ -214,15 +220,15 @@ Sign in with the `.env` Admin; 2FA is required.
 | # | Do this | Expect |
 |---|---|---|
 | E1 | Open **http://localhost:5173/** and type `acme` | Taken to Acme Academy. An unknown name says no organisation uses it. Organisations are never listed publicly. |
-| E2 | Open `/t/acme` and `/t/globex` side by side | Each shows only its own name, colour, courses and footer |
-| E3 | Sign in at `/t/acme` as `student@example.com`, then open `/t/globex/dashboard` in the same browser | Globex asks you to sign in: the Acme session means nothing there |
-| E4 | Sign in at `/t/globex` as `student@example.com` (same email, same password) | A different account, with a `GLOBEX-…` member ID on **Profile** instead of `ACME-…` |
-| E5 | On `/t/globex`, look for **Create account** | Hidden: Globex is invite-only. The sign-in page says to ask for an invitation. |
+| E2 | Open `/acme` and `/globex` side by side | Each shows only its own name, colour, courses and footer |
+| E3 | Sign in at `/acme` as `student@example.com`, then open `/globex/dashboard` in the same browser | Globex asks you to sign in: the Acme session means nothing there |
+| E4 | Sign in at `/globex` as `student@example.com` (same email, same password) | A different account, with a `GLOBEX-…` member ID on **Profile** instead of `ACME-…` |
+| E5 | Globex Admin → **Settings** → Who can join: **Invite only**; Save. Then sign out and look for **Create account** on `/globex` | Hidden. The sign-in page says to ask for an invitation. Set it back to **Open sign-up** afterwards. |
 | E6 | Globex Admin → **Users** → **Invite someone** | Invitation printed in the API terminal. The link opens "Join Globex Learning"; after setting a password the person can sign in. |
 | E7 | Acme Admin → **Settings**: set pass mark 60%, attempts 1, accent colour, allowed domain `acme.com`; Save | Colour changes at once. Quizzes in Acme only now pass at 60% and lock after 1 attempt. Sign-up with a non-`@acme.com` email is refused. Globex is unchanged. |
 | E8 | Acme Admin → **Users** | Every row has a member ID; search finds people by member ID |
 | E9 | Open **/platform**, sign in as the super admin (code in the API terminal) | Overview with every organisation and its numbers |
-| E10 | **Add an organisation**: name, web address, first Admin | Created. The first Admin gets an invitation and appears as "First admin" with member ID `…-000001`. |
+| E10 | In a private window, open **http://localhost:5173/register** (or **Register your organisation** on `/`). Type an organisation name, check the suggested web address, fill in your details and a password | The web address is checked as you type (try `acme`: "already uses"). After registering: "… is ready" with the site address and member ID `…-000001`. A verification email and a "New organisation registered" email to the super admin are printed in the API terminal. Sign in at the new `/<address>/login` with the emailed code: you're its first Admin. It appears in the console's **Organisations** list; the console has no "Add an organisation" button. |
 | E11 | Open an organisation → **Open its Admin area** | Its Admin pages, with a dashed **Platform console** chip in the bar. Changes are audited as `superadmin`. Demoting its first Admin is still refused (AD-04). |
 | E12 | **Suspend** an organisation, then visit its site | "This organisation is suspended" for everyone except the super admin. Other organisations are unaffected. **Reactivate** restores it. |
 | E13 | Console → **Audit log**: filter by organisation, or "Platform events only"; **Export CSV** | Entries of that organisation only, or only platform events (super admin sign-ins, organisations created or suspended) |

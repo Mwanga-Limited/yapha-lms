@@ -9,7 +9,7 @@ import { audit } from '../lib/audit.js';
 import { fail, notFound } from '../lib/errors.js';
 import { emails } from '../lib/mailer.js';
 import { clearSession, publicUser, readMfaToken, setSession, signMfaToken } from '../lib/security.js';
-import { RESERVED_SLUGS, SLUG_RE, defaultSettings, publicTenant, settingsOf, settingsSchema } from '../lib/tenant.js';
+import { publicTenant, settingsOf, settingsSchema } from '../lib/tenant.js';
 import { consumeUserToken, issueUserToken, randomCode } from '../lib/tokens.js';
 
 /*
@@ -17,6 +17,7 @@ import { consumeUserToken, issueUserToken, randomCode } from '../lib/tokens.js';
  * super admin can see all organisations. Each query below therefore says explicitly whether it wants
  * platform rows (tenant_id IS NULL) or a particular organisation's rows.
  * Super admin accounts are created only by the seed script (npm run seed:superadmin).
+ * Organisations register themselves (routes/organisations.js); the super admin oversees them here.
  */
 const SUPER = ['superadmin'];
 const WINDOW = `interval '15 minutes'`;
@@ -261,29 +262,6 @@ export const platformRoutes = actionEndpoint({
         activity,
       };
     },
-  },
-
-  createTenant: {
-    auth: SUPER,
-    schema: z.object({
-      name: reqStr(120),
-      slug: z.string().trim().toLowerCase().regex(SLUG_RE, 'Use 2–40 lowercase letters, numbers and dashes (e.g. acme-academy)'),
-      adminName: reqStr(120),
-      adminEmail: email,
-      settings: settingsSchema.optional(),
-    }),
-    run: async (ctx) => tx(async () => {
-      const d = ctx.data;
-      if (RESERVED_SLUGS.has(d.slug)) fail(400, `"${d.slug}" is reserved. Choose another web address.`);
-      const taken = await query(`SELECT 1 FROM tenants WHERE slug = $1`, [d.slug]);
-      if (taken.rowCount) fail(409, 'Another organisation already uses this web address');
-      const { rows: [t] } = await query(`INSERT INTO tenants (slug, name, settings) VALUES ($1,$2,$3) RETURNING *`,
-        [d.slug, d.name, d.settings ?? defaultSettings()]);
-      await audit({ query }, ctx, { action: 'platform.tenant_create', targetType: 'tenant', targetId: t.id, newValues: { name: t.name, slug: t.slug } });
-      // AD-01 per organisation: its first Admin is created together with it and is protected (AD-04).
-      const admin = await inviteIntoTenant(ctx, t, { name: d.adminName, email: d.adminEmail, role: 'admin', isRoot: true });
-      return { tenant: tenantRow(t), admin: { id: admin.id, email: admin.email, memberCode: admin.member_code } };
-    }),
   },
 
   updateTenant: {
