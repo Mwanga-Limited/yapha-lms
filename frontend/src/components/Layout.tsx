@@ -93,20 +93,20 @@ export function Layout() {
   return (
     <>
       <a href="#main" className="skip">Skip to content</a>
-      <header className="topbar">
+      <header className={`topbar${tenant.branding.header === 'light' ? ' topbar-light' : ''}`}>
         <div className="wrap topbar-inner">
           <Link to="/" className="brand" aria-label={`${tenant.name} home`}>
             {tenant.branding.logoUrl
-              ? <img src={tenant.branding.logoUrl} alt="" className="brand-logo" />
-              : <span className="brand-mark" aria-hidden />}
-            <span className="brand-name">{tenant.name}</span>
+              // The logo carries the organisation's name, so the name isn't repeated beside it.
+              ? <img src={tenant.branding.logoUrl} alt={tenant.name} className="brand-logo" />
+              : <><span className="brand-mark" aria-hidden /><span className="brand-name">{tenant.name}</span></>}
           </Link>
           <button className="icon-btn menu-btn" aria-label="Menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>☰</button>
           <nav className={`mainnav ${menu ? 'open' : ''}`} aria-label="Main">
             {links.map((l) => <NavLink key={l.to + l.label} to={l.to} end={l.end}>{l.label}</NavLink>)}
             {!user && <NavLink to="/verify">Verify a certificate</NavLink>}
             {!user && <NavLink to="/login" className="nav-cta-ghost">Sign in</NavLink>}
-            {!user && tenant.access.signup === 'open' && <NavLink to="/register" className="nav-cta">Create account</NavLink>}
+            {!user && tenant.access.signup === 'open' && <NavLink to="/register" className="nav-cta">Create free account</NavLink>}
             {isSuper && (
               <div className="nav-user">
                 <a href="/platform" className="super-chip" title="You are viewing this organisation as the platform super admin">Platform console</a>

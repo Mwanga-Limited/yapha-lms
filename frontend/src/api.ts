@@ -25,7 +25,7 @@ export interface User {
 }
 
 export interface TenantSettings {
-  branding: { displayName: string; logoFileId: string | null; accentColor: string };
+  branding: { displayName: string; logoFileId: string | null; accentColor: string; primaryColor: string; header: 'dark' | 'light' };
   quiz: { passMark: number; maxAttempts: number; lockHours: number };
   access: { signup: 'open' | 'invite'; allowedDomains: string[] };
   auth: { google: boolean; studentMfa: boolean };
@@ -34,7 +34,7 @@ export interface TenantSettings {
 /** What every page of an organisation knows about it (public, no secrets). */
 export interface TenantInfo {
   id: string; slug: string; name: string; legalName: string; status: 'active' | 'suspended';
-  branding: { accentColor: string; logoUrl: string | null };
+  branding: { accentColor: string; primaryColor: string; header: 'dark' | 'light'; logoUrl: string | null };
   quiz: TenantSettings['quiz'];
   access: TenantSettings['access'];
   auth: TenantSettings['auth'];
