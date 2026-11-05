@@ -1,7 +1,13 @@
 // Thin client for the backend's action endpoints: POST /api/t/<organisation>/<endpoint> { action, data },
 // and POST /api/platform { action, data } for the super admin console.
 
-/** The organisation this page belongs to (from the /t/<slug> part of the address). */
+/** Words that are the app's own pages, never an organisation's web address (same list as the backend's RESERVED_SLUGS). */
+export const RESERVED_PATHS = new Set([
+  'api', 'platform', 'register', 't', 'admin', 'www', 'static', 'assets', 'app', 'src', 'public',
+  'organisation', 'organisations', 'login', 'signup', 'sign-up', 'help', 'support', 'about', 'docs', 'status', 'health',
+]);
+
+/** The organisation this page belongs to (the first part of the address: /<slug>/...). */
 let tenantSlug: string | null = null;
 export const setTenantSlug = (slug: string | null) => { tenantSlug = slug; };
 export const getTenantSlug = () => tenantSlug;
@@ -110,6 +116,16 @@ export function api<T = any>(endpoint: Endpoint, action: string, data: unknown =
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function platformApi<T = any>(action: string, data: unknown = {}): Promise<T> {
   return request<T>('/api/platform', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, data }),
+  });
+}
+
+/** Public organisation registration: POST /api/organisations { action, data }. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function organisationsApi<T = any>(action: string, data: unknown = {}): Promise<T> {
+  return request<T>('/api/organisations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, data }),

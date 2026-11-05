@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { RESERVED_PATHS } from '../api';
 import { useDocumentTitle } from '../ui';
 
 /** "/" — people arrive here without an organisation in the address. Organisations are never listed publicly. */
@@ -9,12 +10,12 @@ export function Landing() {
 
   const go = async (e: FormEvent) => {
     e.preventDefault();
-    const s = slug.trim().toLowerCase().replace(/^.*\/t\//, '').replace(/\/.*$/, '');
-    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(s)) { setError('Use the short name from your organisation’s address, e.g. acme-academy'); return; }
+    const s = slug.trim().toLowerCase().replace(/^https?:\/\/[^/]+/, '').replace(/^\/(t\/)?/, '').replace(/\/.*$/, '');
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(s) || RESERVED_PATHS.has(s)) { setError('Use the short name from your organisation’s address, e.g. acme-academy'); return; }
     const r = await fetch(`/api/t/${s}/auth`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'me', data: {} }) }).catch(() => null);
     if (!r) { setError('Cannot reach the server. Check your connection and try again.'); return; }
     if (r.status === 404) { setError(`No organisation uses “${s}”. Check the address you were given.`); return; }
-    window.location.href = `/t/${s}/`;
+    window.location.href = `/${s}/`;
   };
 
   return (
@@ -22,16 +23,20 @@ export function Landing() {
       <div className="landing-card">
         <span className="brand-mark" aria-hidden />
         <h1>Find your organisation</h1>
-        <p className="muted">Each school, company or academy has its own learning site. Enter the short name from the address you were given, for example <strong>acme</strong> in {window.location.host}/t/<strong>acme</strong>.</p>
+        <p className="muted">Each school, company or academy has its own learning site. Enter the short name from the address you were given, for example <strong>acme</strong> in {window.location.host}/<strong>acme</strong>.</p>
         <form onSubmit={go} className="landing-form">
           <label htmlFor="org" className="sr-only">Organisation</label>
           <div className="slug-input">
-            <span aria-hidden>/t/</span>
+            <span aria-hidden>{window.location.host}/</span>
             <input id="org" value={slug} onChange={(e) => { setSlug(e.target.value); setError(''); }} placeholder="your-organisation" autoFocus autoCapitalize="none" spellCheck={false} />
           </div>
           {error && <p className="field-error">{error}</p>}
           <button className="btn btn-primary btn-block" type="submit">Continue</button>
         </form>
+        <div className="landing-register">
+          <p><strong>New to the platform?</strong> Set up a learning site for your school, company or academy in a few minutes.</p>
+          <a className="btn btn-secondary btn-block" href="/register">Register your organisation</a>
+        </div>
         <p className="small muted landing-foot">Platform administrator? <a href="/platform">Open the platform console</a></p>
       </div>
     </main>

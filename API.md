@@ -2,7 +2,7 @@
 
 Base URL (local): **`http://localhost:4000`**
 
-**Multitenant:** every organisation has the same 8 endpoints under **`/api/t/<organisation>/`**. The examples use the demo organisation `acme`; for another organisation, replace `acme` with its web address (e.g. `globex`). The platform super admin has one more endpoint, `POST /api/platform` (section 9).
+**Multitenant:** every organisation has the same 8 endpoints under **`/api/t/<organisation>/`**. The examples use the demo organisation `acme`; for another organisation, replace `acme` with its web address (e.g. `globex`). New organisations register themselves with `POST /api/organisations` (section 10). The platform super admin has one more endpoint, `POST /api/platform` (section 9).
 
 The 8 organisation endpoints (plus a health check). Five of them take an **action**:
 
@@ -16,7 +16,8 @@ The 8 organisation endpoints (plus a health check). Five of them take an **actio
 | 6 | `/api/t/acme/upload` | POST (form-data) | signed in | upload photos, thumbnails, lesson files and videos |
 | 7 | `/api/t/acme/files/:id` | GET | public / signed link | download an uploaded file |
 | 8 | `/api/t/acme/certificates/:code` | GET | anyone | verify a certificate; `?format=pdf` downloads it |
-| 9 | `/api/platform` | POST | platform super admin | organisations, cross-organisation people and audit log, super admin sign-in |
+| 9 | `/api/organisations` | POST | anyone | an organisation registers itself (section 10) |
+| 10 | `/api/platform` | POST | platform super admin | organisations, cross-organisation people and audit log, super admin sign-in |
 | – | `/api/health` | GET | anyone | is the API running (and the database answering) |
 
 ---
@@ -276,7 +277,6 @@ Same `{ "action", "data" }` shape, at `http://localhost:4000/api/platform`. Only
 | `stats` | `{}` | 200; totals plus one row per organisation (members, courses, enrolments, certificates, last activity) | Signed out → 401 |
 | `tenants` | `{ "q": "", "status": "" }` | 200; organisations with counts | `"status": "suspended"` |
 | `tenant` | `{ "id": "<organisation id>" }` | 200; settings, Admins (with member IDs), recent activity | |
-| `createTenant` | `{ "name": "Delta School", "slug": "delta", "adminName": "Dami", "adminEmail": "dami@delta.example.com" }` | 200; new organisation at `/t/delta`; its first Admin is invited by email | Slug taken → 409. Reserved (`platform`, `api`, `admin`…) → 400 |
 | `updateTenant` | `{ "id": "<id>", "status": "suspended" }` (or `name`, `settings` like Body C) | 200 | Members of a suspended organisation get 403 `TENANT_SUSPENDED` |
 | `addTenantAdmin` | `{ "tenantId": "<id>", "name": "...", "email": "..." }` | 200; invitation sent | |
 | `users` | `{ "q": "", "tenantId": "", "role": "", "page": 1 }` | 200; people in every organisation, each with its organisation | `"tenantId": "<id>"` for one organisation |
@@ -289,6 +289,18 @@ Same `{ "action", "data" }` shape, at `http://localhost:4000/api/platform`. Only
 - Sign in to `acme` as a student, then call `/api/t/globex/account` `dashboard` → 401: the session belongs to acme only.
 - `/api/t/globex/courses` `detail` with an acme course ID → 404.
 - `GET /api/t/globex/certificates/<acme code>` → 404.
+
+## 10. `POST /api/organisations`: an organisation registers itself (public)
+
+Same `{ "action", "data" }` shape, at `http://localhost:4000/api/organisations`. No sign-in needed. The super admin can't create organisations; they register themselves here, and the person registering becomes the first Admin.
+
+| Action | Body `data` | Expect | Also test |
+|---|---|---|---|
+| `info` | `{}` | 200; `{ "signupOpen": true }` | With `ORG_SIGNUP=closed` in `.env`: `false` |
+| `checkAddress` | `{ "slug": "delta" }` | 200; `{ "available": true }` | `"acme"` → `available: false` with a reason; `"platform"` → reserved |
+| `register` | `{ "organisationName": "Delta School", "slug": "delta", "name": "Dami Ade", "email": "dami@delta.example.com", "password": "Password123!" }` | 200; `organisation.url` = `/delta`, `admin.memberCode` = `DELTA-000001`. A verification email goes to Dami, and a "New organisation registered" email to the super admin | Web address taken → 409. Reserved (`platform`, `api`, `admin`…) → 400. Weak password → 400. `ORG_SIGNUP=closed` → 403 `ORG_SIGNUP_CLOSED`. More than `ORG_SIGNUP_PER_HOUR` registrations from one network in an hour → 429 |
+
+Then sign in as Dami at `POST /api/t/delta/auth` `login` (two steps, like any Admin) and use `/api/t/delta/admin` as usual.
 
 ## Health check
 

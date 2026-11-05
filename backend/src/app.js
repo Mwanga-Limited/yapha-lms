@@ -8,7 +8,7 @@ import { ZodError } from 'zod';
 import { config } from './config.js';
 import { HttpError } from './lib/errors.js';
 import { pool } from './db.js';
-import { platformApi, tenantApi } from './routes/index.js';
+import { organisationsApi, platformApi, tenantApi } from './routes/index.js';
 
 export function createApp() {
   const app = express();
@@ -48,6 +48,7 @@ export function createApp() {
   // ---- the API: the same 8 endpoints for every organisation under /api/t/<organisation>/..., plus the platform console
   app.use('/api/t/:tenant', tenantApi());   // auth, account, courses, learn, admin, upload, files/:id, certificates/:code
   app.use('/api/platform', platformApi());  // super admin: sign-in, organisations, cross-organisation views
+  app.use('/api/organisations', organisationsApi());  // public: an organisation registers itself
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 

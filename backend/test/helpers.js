@@ -26,6 +26,7 @@ const { migrate } = await import('../src/scripts/migrate.js');
 const { outbox } = await import('../src/lib/mailer.js');
 
 export { pool, outbox };
+export const { config } = await import('../src/config.js');
 export const app = createApp();
 export const ROOT = { email: 'root@test.dev', password: 'RootPassword123' };
 

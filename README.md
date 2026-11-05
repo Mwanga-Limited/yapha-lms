@@ -4,13 +4,16 @@ One platform, many organisations (tenants). Each organisation (a school, company
 
 - **Backend:** Node.js (Express 5) + **PostgreSQL**, in `backend/`
 - **Frontend:** React + **TypeScript** (Vite), in `frontend/`
-- **Phase 1 rules (AD/CR/EN/QZ/CC)** apply inside every organisation, unchanged.
+- **Phase 1 rules (AD/CR/EN/QZ/CC)** apply inside every organisation, unchanged. Payments are Phase 2.
 
 | Who | Where | What they see |
 |---|---|---|
-| Visitors, Students, Teachers, Admins | `/t/<organisation>/...` e.g. `/t/acme` | Only their organisation |
+| Visitors, Students, Teachers, Admins | `/<organisation>/...` e.g. `/acme` | Only their organisation |
 | Platform super admin | `/platform` | Every organisation: overview, organisations, people, audit log |
 | Anyone without an address | `/` | "Find your organisation" (organisations are never listed publicly) |
+| A new organisation | `/register` | Registers itself; the person registering becomes its first Admin |
+
+Words the app uses for its own pages (`platform`, `register`, `api`, `admin`, `login` and a few more, listed in `RESERVED_SLUGS` in `backend/src/lib/tenant.js`) can't be an organisation's web address. Older links of the form `/t/<organisation>/...` are forwarded to `/<organisation>/...`. The API keeps its `/api/t/<organisation>/` prefix; only the page addresses changed.
 
 ## What multitenancy adds
 
@@ -22,7 +25,8 @@ One platform, many organisations (tenants). Each organisation (a school, company
   - **Quiz rules:** pass mark, attempts before lock, lock hours. Defaults: 70%, 3 and 24h.
   - **Who can join:** open sign-up or invite-only; optional allowed email domains (e.g. `acme.com`).
   - **Sign-in options:** Google on/off; require two-step sign-in for students too.
-- **Platform super admin.** Created once by a seed script. Always signs in with two steps. Can create organisations (with their first Admin, invited by email), suspend and reactivate them, edit their settings, add Admins, and see people and audit logs across all organisations. Inside an organisation the super admin acts as an Admin, audited as `superadmin` and still bound by AD-04.
+- **Organisations register themselves** at `/register`: organisation name, web address, and the details of the person registering, who becomes its first Admin (protected by AD-04, signs in with two steps). The organisation is live straight away with the default settings. The web address is checked live while typing. Registration is rate limited per network (`ORG_SIGNUP_PER_HOUR`, default 5 in production) and can be switched off with `ORG_SIGNUP=closed`. The super admin is emailed about each new organisation.
+- **Platform super admin.** Created once by a seed script. Always signs in with two steps. Does **not** create organisations; oversees them: suspends and reactivates them, edits their settings, adds Admins (e.g. when an organisation's Admins have left), and sees people and audit logs across all organisations. Inside an organisation the super admin acts as an Admin, audited as `superadmin` and still bound by AD-04.
 - **Invitations.** Admins invite Students or Teachers. The invitee gets a 7-day link to set their password, which also verifies their email. Invite-only organisations rely on this.
 
 ## Quick start
@@ -49,8 +53,9 @@ npm run dev                     # http://localhost:5173
 ```
 
 Then:
-- **http://localhost:5173/platform**: super admin console. Create organisations here.
-- **http://localhost:5173/t/acme** and **/t/globex**: the demo organisations. Every demo password is `Password123`:
+- **http://localhost:5173/register**: register a new organisation (you become its first Admin).
+- **http://localhost:5173/platform**: super admin console, to oversee every organisation.
+- **http://localhost:5173/acme** and **/globex**: the demo organisations. Every demo password is `Password123`:
   - `admin@acme.example.com` / `admin@globex.example.com`
   - `teacher@example.com`, `student@example.com` (separate accounts in each organisation)
 
@@ -58,7 +63,7 @@ With `MAIL_TRANSPORT=console` (the default without SMTP), every email is printed
 
 ### Upgrading an existing (single-organisation) database
 
-`npm run migrate` moves all existing data into an organisation called **Yapha** at `/t/yapha`. Nothing is lost:
+`npm run migrate` moves all existing data into an organisation called **Yapha** at `/yapha`. Nothing is lost:
 - Existing users keep their passwords.
 - The existing first Admin becomes that organisation's first Admin.
 - Everyone gets a member ID (`YAPHA-000001`, …).
@@ -84,7 +89,7 @@ cd backend && npm test          # 43 tests; TEST_DATABASE_URL in .env (a separat
 
 ## API
 
-Each organisation has the same 8 endpoints under **`/api/t/<organisation>/`**, and the super admin console has **one** more. Every POST is `{ "action": "...", "data": {...} }`. **API.md** has every action with a ready-to-paste Postman body.
+Each organisation has the same 8 endpoints under **`/api/t/<organisation>/`**, plus **`/api/organisations`** (public registration) and **`/api/platform`** (the super admin console). Every POST is `{ "action": "...", "data": {...} }`. **API.md** has every action with a ready-to-paste Postman body.
 
 | Endpoint | Who | Actions |
 |---|---|---|
@@ -96,7 +101,8 @@ Each organisation has the same 8 endpoints under **`/api/t/<organisation>/`**, a
 | `POST /api/t/:org/upload` | signed in | multipart `purpose` (`photo`, `thumbnail`, `lesson_file`, `lesson_video`, `logo`) + `file` |
 | `GET /api/t/:org/files/:id` | public / signed URL | the organisation's files only |
 | `GET /api/t/:org/certificates/:code` | public | verification JSON (with member ID and issuer); `?format=pdf` returns the branded PDF |
-| `POST /api/platform` | super admin | `me`, `login`, `verifyMfa`, `sendMfaEmail`, `logout`, `changePassword`, `totpSetup`, `totpEnable`, `stats`, `tenants`, `tenant`, `createTenant`, `updateTenant`, `addTenantAdmin`, `users`, `audit`, `auditCsv` |
+| `POST /api/organisations` | public | `info` (is registration open), `checkAddress` (is a web address free), `register` (new organisation + its first Admin) |
+| `POST /api/platform` | super admin | `me`, `login`, `verifyMfa`, `sendMfaEmail`, `logout`, `changePassword`, `totpSetup`, `totpEnable`, `stats`, `tenants`, `tenant`, `updateTenant`, `addTenantAdmin`, `users`, `audit`, `auditCsv` |
 
 Plus `GET /api/health`, which also checks that the database answers.
 
@@ -106,7 +112,7 @@ All Phase 1 rules apply **within each organisation**:
 
 | Rule | Where |
 |---|---|
-| AD-01 first Admin | Platform: one super admin by `seed:superadmin`. Per organisation: its first Admin is created with it by `createTenant`; one `is_root` per organisation (unique index); a trigger blocks setting `is_root` later |
+| AD-01 first Admin | Platform: one super admin by `seed:superadmin`. Per organisation: the person who registers it (`organisations.register`) is its first Admin; one `is_root` per organisation (unique index); a trigger blocks setting `is_root` later |
 | AD-02 public sign-up | `auth.register` always creates a Student, if the organisation allows sign-up (open, allowed domains) |
 | AD-03 Admin changes roles | `admin.changeRole`, inside the Admin's organisation only |
 | AD-04 Admin protection | `admin.changeRole` / `admin.setActive` **and** a DB trigger on `users`; applies to the super admin too |
@@ -141,18 +147,18 @@ backend/
   migrations/001_init.sql             schema, constraints, protective triggers
   migrations/002_multitenancy.sql     tenants table, super admin role
   migrations/003_tenant_isolation.sql tenant_id everywhere, member IDs, row-level security, elearning_app role
-  migrations/004_yapha.sql  the original organisation becomes Yapha at /t/yapha
+  migrations/004_yapha.sql            the original organisation becomes Yapha at /yapha
   src/app.js                          security headers, /api/t/:org and /api/platform, errors
   src/db.js                           per-request tenant scope (transaction + role + app.tenant_id)
   src/routes/index.js                 organisation resolution and request scoping
-  src/routes/                         auth, account, courses, learn, admin, files, certificates, platform
+  src/routes/                         auth, account, courses, learn, admin, files, certificates, organisations (registration), platform
   src/lib/tenant.js                   organisation settings (schema, defaults), join rules
   src/scripts/                        migrate, seed-superadmin, seed-demo
   test/                               rules, files/2FA, tenancy (isolation) tests
 frontend/
-  src/main.tsx                        picks the app by address: /t/<org>, /platform or /
-  src/App.tsx, src/pages/             an organisation's site (router basename /t/<org>)
+  src/main.tsx                        picks the app by address: /<org>, /platform or /
+  src/App.tsx, src/pages/             an organisation's site (router basename /<org>)
   src/platform/                       super admin console
   src/components/SettingsForm.tsx     organisation settings editor (Admin and super admin)
-postman/                              collection + environment (120 requests, 196 checks)
+postman/                              collection + environment (122 requests, 199 checks)
 ```

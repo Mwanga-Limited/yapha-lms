@@ -40,7 +40,7 @@ export function PlatformUsers() {
                 <tr key={u.id} className={u.isActive ? '' : 'row-muted'}>
                   <td><strong>{u.name}</strong>{u.isRoot && <span className="badge badge-approved">First admin</span>}<div className="muted small">{u.email}</div></td>
                   <td><code>{u.memberCode}</code></td>
-                  <td><a href={`/t/${u.tenant.slug}/admin/users`}>{u.tenant.name}</a></td>
+                  <td><a href={`/${u.tenant.slug}/admin/users`}>{u.tenant.name}</a></td>
                   <td className="cap">{u.role}</td>
                   <td>{u.isActive ? (u.emailVerified ? 'Active' : 'Not verified') : 'Deactivated'}</td>
                   <td>{fmtDate(u.createdAt)}</td>

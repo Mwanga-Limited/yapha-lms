@@ -33,7 +33,7 @@ export function AdminSettings() {
       <div className="page-head"><h1>Organisation settings</h1><p className="muted">These apply only to {data.tenant.name}.</p></div>
       <div className="org-ids panel">
         <div><span className="muted small">Organisation ID</span><code>{data.id}</code></div>
-        <div><span className="muted small">Web address</span><code>{window.location.host}/t/{data.slug}</code></div>
+        <div><span className="muted small">Web address</span><code>{window.location.host}/{data.slug}</code></div>
         <div><span className="muted small">Created</span><span>{fmtDate(data.createdAt)}</span></div>
         <div><span className="muted small">Members</span><span>{data.counts.members}</span></div>
       </div>

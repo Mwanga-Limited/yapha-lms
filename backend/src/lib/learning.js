@@ -113,7 +113,7 @@ export function certificatePdf(cert, { tenant, logoPath = null } = {}) {
   doc.font('Helvetica').fontSize(10).fillColor('#666').text('Date issued', W - 320, y + 24, { width: 200, align: 'center' });
 
   doc.font('Helvetica').fontSize(10).fillColor('#555')
-    .text(`Verification code: ${cert.code}   ·   Verify at ${config.appUrl}/t/${tenant?.slug ?? ''}/verify/${cert.code}`, 0, H - 72, { align: 'center' });
+    .text(`Verification code: ${cert.code}   ·   Verify at ${config.appUrl}/${tenant?.slug ?? ''}/verify/${cert.code}`, 0, H - 72, { align: 'center' });
   doc.end();
   return doc;
 }

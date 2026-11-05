@@ -33,7 +33,7 @@ function TenantUnavailable({ reason }: { reason: 'not_found' | 'suspended' }) {
     <main className="wrap main">
       <Empty title={reason === 'not_found' ? 'We could not find this organisation' : 'This organisation is suspended'}>
         <p>{reason === 'not_found'
-          ? 'Check the address you were given. It looks like /t/your-organisation.'
+          ? 'Check the address you were given. It looks like /your-organisation.'
           : 'Its learning site is temporarily unavailable. Contact your organisation or the platform administrator.'}</p>
         <a className="btn btn-primary" href="/">Find your organisation</a>
       </Empty>

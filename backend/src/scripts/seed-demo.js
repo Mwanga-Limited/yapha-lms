@@ -5,6 +5,11 @@ import bcrypt from 'bcryptjs';
 import { config } from '../config.js';
 import { pool, tx } from '../db.js';
 
+if (process.env.NODE_ENV === 'production') {
+  console.error('seed:demo creates accounts with a public password and must not be run in production.');
+  process.exit(1);
+}
+
 const PASSWORD = 'Password123';
 const content = {
   sections: [
@@ -72,9 +77,9 @@ try {
     });
   }
   console.log(`Demo data ready. Every demo password is ${PASSWORD}.
-  ${config.appUrl}/t/acme     Acme Academy    (open sign-up, 70% pass mark, 3 attempts)
+  ${config.appUrl}/acme       Acme Academy    (open sign-up, 70% pass mark, 3 attempts)
      admin@acme.example.com, teacher@example.com, student@example.com
-  ${config.appUrl}/t/globex   Globex Training (open sign-up, 80% pass mark, 2 attempts)
+  ${config.appUrl}/globex     Globex Training (open sign-up, 80% pass mark, 2 attempts)
      admin@globex.example.com, teacher@example.com, student@example.com
   The same teacher/student emails are separate accounts in each organisation.
   Admin and Teacher sign-in codes arrive by email (printed in the API terminal with MAIL_TRANSPORT=console).`);

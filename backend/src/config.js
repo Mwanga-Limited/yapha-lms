@@ -23,6 +23,8 @@ export const config = {
   appUrl: (env.APP_URL || 'http://localhost:5173').replace(/\/$/, ''),
   cookieSecure: env.COOKIE_SECURE ? env.COOKIE_SECURE === 'true' : isProd,
   trustProxy: env.TRUST_PROXY || (isProd ? '1' : 'loopback'),
+  orgSignupOpen: (env.ORG_SIGNUP || 'open') !== 'closed',   // organisations register themselves at /register
+  orgSignupPerHour: Number(env.ORG_SIGNUP_PER_HOUR || (isProd ? 5 : 100)),   // registrations per IP per hour
   googleClientId: env.GOOGLE_CLIENT_ID || '',
   uploadDir: path.resolve(env.UPLOAD_DIR || 'uploads'),
   frontendDist: path.resolve(env.FRONTEND_DIST || '../frontend/dist'),

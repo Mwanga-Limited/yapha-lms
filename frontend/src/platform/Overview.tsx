@@ -17,8 +17,7 @@ export function PlatformOverview() {
   return (
     <>
       <div className="page-head row-between">
-        <div><h1>All organisations</h1><p className="muted">What's happening across the platform. Each organisation only ever sees its own block.</p></div>
-        <Link className="btn btn-primary" to="/organisations?new=1">Add an organisation</Link>
+        <div><h1>All organisations</h1><p className="muted">What's happening across the platform. Organisations register themselves at /register; each one only ever sees its own block.</p></div>
       </div>
       <dl className="stats">
         <div><dt>Organisations</dt><dd>{s.tenants}</dd><small>{s.active_tenants} active{s.tenants - s.active_tenants ? ` · ${s.tenants - s.active_tenants} suspended` : ''}</small></div>
@@ -26,14 +25,14 @@ export function PlatformOverview() {
         <div><dt>Active enrolments</dt><dd>{s.enrollments}</dd><small>{s.completions} completions</small></div>
         <div><dt>Published courses</dt><dd>{s.published_courses}</dd><small>{s.awaiting_review} waiting for review</small></div>
       </dl>
-      {tenants.length === 0 ? <Empty title="No organisations yet"><Link className="btn btn-primary" to="/organisations?new=1">Add the first organisation</Link></Empty> : (
+      {tenants.length === 0 ? <Empty title="No organisations yet">Organisations appear here when they register at <a href="/register">/register</a>.</Empty> : (
         <div className="table-wrap">
           <table className="table">
             <thead><tr><th>Organisation</th><th>Status</th><th>Members</th><th>Courses</th><th>Enrolments</th><th>Certificates</th><th>In review</th><th>Last activity</th></tr></thead>
             <tbody>
               {tenants.map((t) => (
                 <tr key={t.id}>
-                  <td><Link to={`/organisations/${t.id}`}><strong>{t.displayName}</strong></Link><div className="muted small">/t/{t.slug}</div></td>
+                  <td><Link to={`/organisations/${t.id}`}><strong>{t.displayName}</strong></Link><div className="muted small">/{t.slug}</div></td>
                   <td><StatusBadge status={t.status} /></td>
                   <td>{t.counts!.members}<div className="muted small">{t.counts!.students} S · {t.counts!.teachers} T · {t.counts!.admins} A</div></td>
                   <td>{t.counts!.publishedCourses}</td>

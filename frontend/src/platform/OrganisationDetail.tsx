@@ -22,7 +22,7 @@ export function OrganisationDetail() {
   const t = data.tenant;
   const c = t.counts!;
   const dirty = JSON.stringify(draft) !== JSON.stringify(data.settings) || name !== t.name;
-  const site = `/t/${t.slug}`;
+  const site = `/${t.slug}`;
 
   const setStatus = (status: 'active' | 'suspended') => {
     if (status === 'suspended' && !confirm(`Suspend ${t.displayName}? Its members can't use the site until you reactivate it. Nothing is deleted.`)) return;
