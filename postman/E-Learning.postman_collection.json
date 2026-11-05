@@ -1,0 +1,5628 @@
+{
+  "info": {
+    "name": "E-Learning Platform API",
+    "description": "End-to-end walkthrough of every Phase 1 feature, in order. Every request has tests that check the business rule named in its title (AD-, CR-, EN-, QZ-, CC-).\n\nAll calls are `POST /api/<endpoint>` with `{ \"action\": \"...\", \"data\": {...} }`, except the GET routes for health, files and certificates.\nPostman keeps the session cookie, so each folder signs in as the role it needs and signs out at the end.\n\nOrganisation endpoints are under /api/t/{{tenant}}/...; the super admin console is POST /api/platform.\n**Before running:** start the API, run `npm run seed:superadmin` and `npm run seed:demo`, import the environment, and set superadminEmail/superadminPassword. The defaults use the demo organisations acme and globex.\n**2FA:** set adminTotpSecret and teacherTotpSecret to run unattended in the Collection Runner (see TESTING.md), or paste each emailed code from the API terminal into mfaCode.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "00 Platform super admin",
+      "description": "POST /api/platform. The super admin sees every organisation. Created only by `npm run seed:superadmin`.",
+      "item": [
+        {
+          "name": "Sign in as superadmin (step 1: password)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AD-07: superadmin must pass a second factor (no session yet)', () => { pm.expect(b.mfa).to.be.an('object'); pm.expect(b.user).to.be.undefined; });",
+                  "pm.collectionVariables.set('mfaToken', b.mfa.token);",
+                  "console.log('2FA method: ' + b.mfa.method + (b.mfa.method === 'email' ? ' — copy the code printed in the API terminal into the mfaCode variable' : ''));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"login\",\n  \"data\": {\n    \"email\": \"{{superadminEmail}}\",\n    \"password\": \"{{superadminPassword}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/platform",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform"
+              ]
+            },
+            "description": "Admins and Teachers get an MFA step instead of a session (AD-07). If **superadminTotpSecret** is set, the next request generates the authenticator code itself. Otherwise copy the 6-digit code printed in the API terminal into the **mfaCode** environment variable before sending step 2."
+          }
+        },
+        {
+          "name": "Sign in as superadmin (step 2: 6-digit code)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('superadminTotpSecret');",
+                  "if (secret) pm.variables.set('mfaCode', totp(secret));",
+                  "function totp(b32) {",
+                  "  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                  "  let bits = '';",
+                  "  for (const ch of b32.replace(/[=\\s]/g, '').toUpperCase()) bits += alphabet.indexOf(ch).toString(2).padStart(5, '0');",
+                  "  let hex = '';",
+                  "  for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                  "  const counter = Math.floor(Date.now() / 30000).toString(16).padStart(16, '0');",
+                  "  const h = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(counter), CryptoJS.enc.Hex.parse(hex)).toString();",
+                  "  const o = parseInt(h.slice(-1), 16);",
+                  "  return String((parseInt(h.substr(o * 2, 8), 16) & 0x7fffffff) % 1000000).padStart(6, '0');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Signed in as superadmin', () => pm.expect(b.user.role).to.eql('superadmin'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"verifyMfa\",\n  \"data\": {\n    \"token\": \"{{mfaToken}}\",\n    \"code\": \"{{mfaCode}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/platform",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform"
+              ]
+            },
+            "description": "Uses the TOTP secret from the environment when present; otherwise the manual **mfaCode** value."
+          }
+        },
+        {
+          "name": "Overview across all organisations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Lists every organisation with its counts', () => { pm.expect(b.tenants.length).to.be.above(1); pm.expect(b.tenants[0].counts).to.have.property('members'); });",
+                  "pm.test('Includes {{tenant}} and {{otherTenant}}', () => { const s = b.tenants.map(t => t.slug); pm.expect(s).to.include(pm.environment.get('tenant')); pm.expect(s).to.include(pm.environment.get('otherTenant')); });",
+                  "pm.collectionVariables.set('tenantId', b.tenants.find(t => t.slug === pm.environment.get('tenant')).id);",
+                  "pm.collectionVariables.set('otherTenantId', b.tenants.find(t => t.slug === pm.environment.get('otherTenant')).id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"stats\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/platform",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Organisation detail: settings, admins, activity",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has its unique ID and per-organisation settings', () => { pm.expect(b.tenant.id).to.eql(pm.collectionVariables.get('tenantId')); pm.expect(b.settings.quiz).to.have.property('passMark'); });",
+                  "pm.test('First Admin listed with a member ID', () => pm.expect(b.admins.find(a => a.isRoot).memberCode).to.match(/^[A-Z0-9]+-[0-9]{6}$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"tenant\",\n  \"data\": {\n    \"id\": \"{{tenantId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/platform",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform"
+              ]
+            }
+          }
+        },
+        {
+          "name": "People across organisations (filter to one)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Only people of {{otherTenant}}', () => pm.response.json().users.forEach(u => pm.expect(u.tenant.slug).to.eql(pm.environment.get('otherTenant'))));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"users\",\n  \"data\": {\n    \"tenantId\": \"{{otherTenantId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/platform",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create an organisation with its first Admin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('New organisation and its first Admin (invited by email)', () => { pm.expect(b.tenant.slug).to.match(/^pm-/); pm.expect(b.admin.memberCode).to.match(/-000001$/); });",
+                  "pm.collectionVariables.set('newTenantId', b.tenant.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"createTenant\",\n  \"data\": {\n    \"name\": \"Postman Org {{$timestamp}}\",\n    \"slug\": \"pm-{{$timestamp}}\",\n    \"adminName\": \"Postman Admin\",\n    \"adminEmail\": \"pm-admin-{{$timestamp}}@example.com\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/platform",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reserved web address is refused",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"createTenant\",\n  \"data\": {\n    \"name\": \"Bad\",\n    \"slug\": \"platform\",\n    \"adminName\": \"X\",\n    \"adminEmail\": \"x@example.com\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/platform",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Suspend the new organisation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Suspended', () => pm.expect(pm.response.json().tenant.status).to.eql('suspended'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"updateTenant\",\n  \"data\": {\n    \"id\": \"{{newTenantId}}\",\n    \"status\": \"suspended\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/platform",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Audit log: platform events only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No organisation entries', () => pm.response.json().entries.forEach(e => pm.expect(e.tenant_slug).to.eql(null)));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"audit\",\n  \"data\": {\n    \"tenantId\": \"platform\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/platform",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sign out (super admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/platform",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform"
+              ]
+            }
+          }
+        },
+        {
+          "name": "An organisation Admin cannot use the console",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Signed out: 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"stats\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/platform",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "platform"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "01 Public catalogue & sign-up",
+      "description": "Anonymous browsing, registration, email-verification and enrolment guards.",
+      "item": [
+        {
+          "name": "Health check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('API is up', () => pm.expect(pm.response.json().ok).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Who am I (signed out)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No session', () => pm.expect(pm.response.json().user).to.eql(null));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"me\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Catalogue: search & filters",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Returns published courses', () => pm.expect(b.courses.length).to.be.above(0));",
+                  "pm.collectionVariables.set('demoCourseId', b.courses[b.courses.length - 1].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"catalog\",\n  \"data\": {\n    \"q\": \"\",\n    \"category\": \"\",\n    \"level\": \"\",\n    \"page\": 1\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            },
+            "description": "Run `npm run seed:demo` first so at least one course is published."
+          }
+        },
+        {
+          "name": "Course detail page",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Has outline, teacher profile and viewer state', () => { pm.expect(b.outline).to.be.an('array'); pm.expect(b.teacher.name).to.be.a('string'); pm.expect(b.viewer.enrolled).to.eql(false); });",
+                  "const lessons = b.outline.flatMap(s => s.items).filter(i => i.kind === 'lesson');",
+                  "pm.collectionVariables.set('demoPreviewLessonId', (lessons.find(l => l.preview) || lessons[0]).id);",
+                  "pm.collectionVariables.set('demoLockedLessonId', (lessons.find(l => !l.preview) || lessons[0]).id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"detail\",\n  \"data\": {\n    \"id\": \"{{demoCourseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Free preview lesson opens without signing in",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Lesson content returned', () => pm.expect(pm.response.json().lesson.title).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"preview\",\n  \"data\": {\n    \"courseId\": \"{{demoCourseId}}\",\n    \"lessonId\": \"{{demoPreviewLessonId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Non-preview lesson is refused (EN-02)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('EN-02: 403 without enrolment', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"preview\",\n  \"data\": {\n    \"courseId\": \"{{demoCourseId}}\",\n    \"lessonId\": \"{{demoLockedLessonId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Register with a weak password is refused",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"register\",\n  \"data\": {\n    \"name\": \"Weak Password\",\n    \"email\": \"weak{{$timestamp}}@example.com\",\n    \"password\": \"short\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Register a new student",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AD-02: public sign-up creates a Student', () => pm.expect(b.user.role).to.eql('student'));",
+                  "pm.test('Email starts unverified', () => pm.expect(b.user.emailVerified).to.eql(false));",
+                  "pm.collectionVariables.set('newStudentEmail', b.user.email);",
+                  "pm.collectionVariables.set('newStudentId', b.user.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"register\",\n  \"data\": {\n    \"name\": \"Postman Learner\",\n    \"email\": \"learner{{$timestamp}}@example.com\",\n    \"password\": \"Password123!\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Signs the new account in straight away. A verification link is printed in the API terminal."
+          }
+        },
+        {
+          "name": "Unverified user cannot enrol (EN-03)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('EN-03: EMAIL_NOT_VERIFIED', () => pm.expect(pm.response.json().code).to.eql('EMAIL_NOT_VERIFIED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"enrol\",\n  \"data\": {\n    \"courseId\": \"{{demoCourseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Not enrolled: lesson is refused (EN-02)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));",
+                  "pm.test('EN-02: NOT_ENROLLED', () => pm.expect(pm.response.json().code).to.eql('NOT_ENROLLED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"lesson\",\n  \"data\": {\n    \"courseId\": \"{{demoCourseId}}\",\n    \"lessonId\": \"{{demoLockedLessonId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Student cannot call admin actions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('RBAC: 403 for a student', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"users\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Student cannot create courses",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('RBAC: 403 for a student', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"create\",\n  \"data\": {\n    \"title\": \"Not allowed\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Apply to become a Teacher (AD-08)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Application is pending', () => pm.expect(pm.response.json().application.status).to.eql('pending'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"applyTeacher\",\n  \"data\": {\n    \"bio\": \"I have taught bookkeeping to traders for ten years.\",\n    \"expertise\": \"Bookkeeping\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "account"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sign out (new student)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Wrong password is refused and logged",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"login\",\n  \"data\": {\n    \"email\": \"{{newStudentEmail}}\",\n    \"password\": \"WrongPassword1\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Password reset request (same answer for any email)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"requestPasswordReset\",\n  \"data\": {\n    \"email\": \"{{newStudentEmail}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Teacher builds and submits a course",
+      "description": "CR-01 checks and the start of the approval workflow.",
+      "item": [
+        {
+          "name": "Sign in as teacher (step 1: password)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AD-07: teacher must pass a second factor (no session yet)', () => { pm.expect(b.mfa).to.be.an('object'); pm.expect(b.user).to.be.undefined; });",
+                  "pm.collectionVariables.set('mfaToken', b.mfa.token);",
+                  "console.log('2FA method: ' + b.mfa.method + (b.mfa.method === 'email' ? ' — copy the code printed in the API terminal into the mfaCode variable' : ''));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"login\",\n  \"data\": {\n    \"email\": \"{{teacherEmail}}\",\n    \"password\": \"{{teacherPassword}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Admins and Teachers get an MFA step instead of a session (AD-07). If **teacherTotpSecret** is set, the next request generates the authenticator code itself. Otherwise copy the 6-digit code printed in the API terminal into the **mfaCode** environment variable before sending step 2."
+          }
+        },
+        {
+          "name": "Sign in as teacher (step 2: 6-digit code)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('teacherTotpSecret');",
+                  "if (secret) pm.variables.set('mfaCode', totp(secret));",
+                  "function totp(b32) {",
+                  "  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                  "  let bits = '';",
+                  "  for (const ch of b32.replace(/[=\\s]/g, '').toUpperCase()) bits += alphabet.indexOf(ch).toString(2).padStart(5, '0');",
+                  "  let hex = '';",
+                  "  for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                  "  const counter = Math.floor(Date.now() / 30000).toString(16).padStart(16, '0');",
+                  "  const h = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(counter), CryptoJS.enc.Hex.parse(hex)).toString();",
+                  "  const o = parseInt(h.slice(-1), 16);",
+                  "  return String((parseInt(h.substr(o * 2, 8), 16) & 0x7fffffff) % 1000000).padStart(6, '0');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Signed in as teacher', () => pm.expect(b.user.role).to.eql('teacher'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"verifyMfa\",\n  \"data\": {\n    \"token\": \"{{mfaToken}}\",\n    \"code\": \"{{mfaCode}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Uses the TOTP secret from the environment when present; otherwise the manual **mfaCode** value."
+          }
+        },
+        {
+          "name": "Create a draft course",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('courseId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"create\",\n  \"data\": {\n    \"title\": \"Postman Course {{$timestamp}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit an empty course is refused (CR-01)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 422', () => pm.response.to.have.status(422));",
+                  "const p = pm.response.json().problems.join(' | ');",
+                  "pm.test('CR-01: outline, lesson, quiz and completion rule are required', () => { pm.expect(p).to.include('outline'); pm.expect(p).to.include('lesson'); pm.expect(p).to.include('quiz'); pm.expect(p).to.include('completion rule'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"submit\",\n  \"data\": {\n    \"id\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Save course details (title, summary, category, outline…)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status is still draft', () => pm.expect(pm.response.json().course.status).to.eql('draft'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"updateMeta\",\n  \"data\": {\n    \"id\": \"{{courseId}}\",\n    \"title\": \"Postman Course {{$timestamp}}\",\n    \"summary\": \"Created from the Postman collection\",\n    \"category\": \"Testing\",\n    \"outline\": \"Variables\\nEquations\\nWord problems\",\n    \"level\": \"beginner\",\n    \"language\": \"English\",\n    \"description\": \"A course created to demonstrate the approval workflow.\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Save sections, lessons, quiz and completion rule",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No problems left before submitting', () => pm.expect(pm.response.json().problems).to.eql([]));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"saveContent\",\n  \"data\": {\n    \"id\": \"{{courseId}}\",\n    \"content\": {\n      \"sections\": [\n        {\n          \"id\": \"s1\",\n          \"title\": \"Getting started\",\n          \"items\": [\n            {\n              \"id\": \"l1\",\n              \"kind\": \"lesson\",\n              \"title\": \"Welcome\",\n              \"type\": \"text\",\n              \"body\": \"Hello and welcome to the course.\",\n              \"preview\": true\n            },\n            {\n              \"id\": \"l2\",\n              \"kind\": \"lesson\",\n              \"title\": \"Watch this\",\n              \"type\": \"video\",\n              \"videoUrl\": \"https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4\"\n            },\n            {\n              \"id\": \"q1\",\n              \"kind\": \"quiz\",\n              \"title\": \"Check-in\",\n              \"questions\": [\n                {\n                  \"id\": \"a\",\n                  \"type\": \"single\",\n                  \"prompt\": \"2 + 2 = ?\",\n                  \"options\": [\n                    {\n                      \"id\": \"x\",\n                      \"text\": \"4\"\n                    },\n                    {\n                      \"id\": \"y\",\n                      \"text\": \"5\"\n                    }\n                  ],\n                  \"correct\": [\n                    \"x\"\n                  ]\n                },\n                {\n                  \"id\": \"b\",\n                  \"type\": \"truefalse\",\n                  \"prompt\": \"The sky is blue\",\n                  \"correct\": [\n                    \"true\"\n                  ]\n                },\n                {\n                  \"id\": \"c\",\n                  \"type\": \"multi\",\n                  \"prompt\": \"Pick the even numbers\",\n                  \"options\": [\n                    {\n                      \"id\": \"m\",\n                      \"text\": \"2\"\n                    },\n                    {\n                      \"id\": \"n\",\n                      \"text\": \"3\"\n                    },\n                    {\n                      \"id\": \"o\",\n                      \"text\": \"4\"\n                    }\n                  ],\n                  \"correct\": [\n                    \"m\",\n                    \"o\"\n                  ]\n                }\n              ]\n            }\n          ]\n        }\n      ],\n      \"completion\": {\n        \"lessons\": [\n          \"l1\",\n          \"l2\"\n        ],\n        \"quizzes\": [\n          \"q1\"\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit for review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"submit\",\n  \"data\": {\n    \"id\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Teacher cannot approve (CR-02)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('CR-02: only an Admin reviews', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"reviewQueue\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cannot publish before approval (CR-02)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('CR-02: 409 until approved', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"publish\",\n  \"data\": {\n    \"id\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Content is locked while in review",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"saveContent\",\n  \"data\": {\n    \"id\": \"{{courseId}}\",\n    \"content\": {\n      \"sections\": [\n        {\n          \"id\": \"s1\",\n          \"title\": \"Getting started\",\n          \"items\": [\n            {\n              \"id\": \"l1\",\n              \"kind\": \"lesson\",\n              \"title\": \"Welcome\",\n              \"type\": \"text\",\n              \"body\": \"Hello and welcome to the course.\",\n              \"preview\": true\n            },\n            {\n              \"id\": \"l2\",\n              \"kind\": \"lesson\",\n              \"title\": \"Watch this\",\n              \"type\": \"video\",\n              \"videoUrl\": \"https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4\"\n            },\n            {\n              \"id\": \"q1\",\n              \"kind\": \"quiz\",\n              \"title\": \"Check-in\",\n              \"questions\": [\n                {\n                  \"id\": \"a\",\n                  \"type\": \"single\",\n                  \"prompt\": \"2 + 2 = ?\",\n                  \"options\": [\n                    {\n                      \"id\": \"x\",\n                      \"text\": \"4\"\n                    },\n                    {\n                      \"id\": \"y\",\n                      \"text\": \"5\"\n                    }\n                  ],\n                  \"correct\": [\n                    \"x\"\n                  ]\n                },\n                {\n                  \"id\": \"b\",\n                  \"type\": \"truefalse\",\n                  \"prompt\": \"The sky is blue\",\n                  \"correct\": [\n                    \"true\"\n                  ]\n                },\n                {\n                  \"id\": \"c\",\n                  \"type\": \"multi\",\n                  \"prompt\": \"Pick the even numbers\",\n                  \"options\": [\n                    {\n                      \"id\": \"m\",\n                      \"text\": \"2\"\n                    },\n                    {\n                      \"id\": \"n\",\n                      \"text\": \"3\"\n                    },\n                    {\n                      \"id\": \"o\",\n                      \"text\": \"4\"\n                    }\n                  ],\n                  \"correct\": [\n                    \"m\",\n                    \"o\"\n                  ]\n                }\n              ]\n            }\n          ]\n        }\n      ],\n      \"completion\": {\n        \"lessons\": [\n          \"l1\",\n          \"l2\"\n        ],\n        \"quizzes\": [\n          \"q1\"\n        ]\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sign out (teacher)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Admin rejects with a reason",
+      "description": "CR-03: a rejection needs a reason the teacher can see.",
+      "item": [
+        {
+          "name": "Sign in as admin (step 1: password)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AD-07: admin must pass a second factor (no session yet)', () => { pm.expect(b.mfa).to.be.an('object'); pm.expect(b.user).to.be.undefined; });",
+                  "pm.collectionVariables.set('mfaToken', b.mfa.token);",
+                  "console.log('2FA method: ' + b.mfa.method + (b.mfa.method === 'email' ? ' — copy the code printed in the API terminal into the mfaCode variable' : ''));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"login\",\n  \"data\": {\n    \"email\": \"{{adminEmail}}\",\n    \"password\": \"{{adminPassword}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Admins and Teachers get an MFA step instead of a session (AD-07). If **adminTotpSecret** is set, the next request generates the authenticator code itself. Otherwise copy the 6-digit code printed in the API terminal into the **mfaCode** environment variable before sending step 2."
+          }
+        },
+        {
+          "name": "Sign in as admin (step 2: 6-digit code)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('adminTotpSecret');",
+                  "if (secret) pm.variables.set('mfaCode', totp(secret));",
+                  "function totp(b32) {",
+                  "  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                  "  let bits = '';",
+                  "  for (const ch of b32.replace(/[=\\s]/g, '').toUpperCase()) bits += alphabet.indexOf(ch).toString(2).padStart(5, '0');",
+                  "  let hex = '';",
+                  "  for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                  "  const counter = Math.floor(Date.now() / 30000).toString(16).padStart(16, '0');",
+                  "  const h = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(counter), CryptoJS.enc.Hex.parse(hex)).toString();",
+                  "  const o = parseInt(h.slice(-1), 16);",
+                  "  return String((parseInt(h.substr(o * 2, 8), 16) & 0x7fffffff) % 1000000).padStart(6, '0');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Signed in as admin', () => pm.expect(b.user.role).to.eql('admin'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"verifyMfa\",\n  \"data\": {\n    \"token\": \"{{mfaToken}}\",\n    \"code\": \"{{mfaCode}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Uses the TOTP secret from the environment when present; otherwise the manual **mfaCode** value."
+          }
+        },
+        {
+          "name": "Review queue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const item = pm.response.json().queue.find(q => q.course.id === pm.collectionVariables.get('courseId'));",
+                  "pm.test('The submitted course is waiting', () => pm.expect(item).to.be.an('object'));",
+                  "pm.collectionVariables.set('versionId', item.versionId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"reviewQueue\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Preview the full course (including quiz answers)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Admin sees the answer key', () => pm.expect(pm.response.json().draft.content.sections[0].items[2].questions[0].correct).to.eql(['x']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"get\",\n  \"data\": {\n    \"id\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reject without a reason is refused (CR-03)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"rejectCourse\",\n  \"data\": {\n    \"versionId\": \"{{versionId}}\",\n    \"reason\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reject with a reason",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"rejectCourse\",\n  \"data\": {\n    \"versionId\": \"{{versionId}}\",\n    \"reason\": \"Please add a short introduction to the first lesson.\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sign out (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 Teacher sees the reason and resubmits",
+      "item": [
+        {
+          "name": "Sign in as teacher (step 1: password)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AD-07: teacher must pass a second factor (no session yet)', () => { pm.expect(b.mfa).to.be.an('object'); pm.expect(b.user).to.be.undefined; });",
+                  "pm.collectionVariables.set('mfaToken', b.mfa.token);",
+                  "console.log('2FA method: ' + b.mfa.method + (b.mfa.method === 'email' ? ' — copy the code printed in the API terminal into the mfaCode variable' : ''));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"login\",\n  \"data\": {\n    \"email\": \"{{teacherEmail}}\",\n    \"password\": \"{{teacherPassword}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Admins and Teachers get an MFA step instead of a session (AD-07). If **teacherTotpSecret** is set, the next request generates the authenticator code itself. Otherwise copy the 6-digit code printed in the API terminal into the **mfaCode** environment variable before sending step 2."
+          }
+        },
+        {
+          "name": "Sign in as teacher (step 2: 6-digit code)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('teacherTotpSecret');",
+                  "if (secret) pm.variables.set('mfaCode', totp(secret));",
+                  "function totp(b32) {",
+                  "  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                  "  let bits = '';",
+                  "  for (const ch of b32.replace(/[=\\s]/g, '').toUpperCase()) bits += alphabet.indexOf(ch).toString(2).padStart(5, '0');",
+                  "  let hex = '';",
+                  "  for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                  "  const counter = Math.floor(Date.now() / 30000).toString(16).padStart(16, '0');",
+                  "  const h = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(counter), CryptoJS.enc.Hex.parse(hex)).toString();",
+                  "  const o = parseInt(h.slice(-1), 16);",
+                  "  return String((parseInt(h.substr(o * 2, 8), 16) & 0x7fffffff) % 1000000).padStart(6, '0');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Signed in as teacher', () => pm.expect(b.user.role).to.eql('teacher'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"verifyMfa\",\n  \"data\": {\n    \"token\": \"{{mfaToken}}\",\n    \"code\": \"{{mfaCode}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Uses the TOTP secret from the environment when present; otherwise the manual **mfaCode** value."
+          }
+        },
+        {
+          "name": "Course shows Rejected with the reason",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Status is rejected', () => pm.expect(b.course.status).to.eql('rejected'));",
+                  "pm.test('CR-03: reason is visible to the teacher', () => pm.expect(b.reviews[0].reason).to.include('introduction'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"get\",\n  \"data\": {\n    \"id\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Fix and resubmit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"submit\",\n  \"data\": {\n    \"id\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Notifications (bell) include the decision",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has a course notification', () => pm.expect(pm.response.json().items.some(n => n.type === 'course')).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"notifications\",\n  \"data\": {\n    \"limit\": 10\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "account"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sign out (teacher)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 Admin approves, publishes and manages users",
+      "description": "CR-02, AD-03 … AD-06, teacher applications, audit log.",
+      "item": [
+        {
+          "name": "Sign in as admin (step 1: password)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AD-07: admin must pass a second factor (no session yet)', () => { pm.expect(b.mfa).to.be.an('object'); pm.expect(b.user).to.be.undefined; });",
+                  "pm.collectionVariables.set('mfaToken', b.mfa.token);",
+                  "console.log('2FA method: ' + b.mfa.method + (b.mfa.method === 'email' ? ' — copy the code printed in the API terminal into the mfaCode variable' : ''));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"login\",\n  \"data\": {\n    \"email\": \"{{adminEmail}}\",\n    \"password\": \"{{adminPassword}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Admins and Teachers get an MFA step instead of a session (AD-07). If **adminTotpSecret** is set, the next request generates the authenticator code itself. Otherwise copy the 6-digit code printed in the API terminal into the **mfaCode** environment variable before sending step 2."
+          }
+        },
+        {
+          "name": "Sign in as admin (step 2: 6-digit code)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('adminTotpSecret');",
+                  "if (secret) pm.variables.set('mfaCode', totp(secret));",
+                  "function totp(b32) {",
+                  "  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                  "  let bits = '';",
+                  "  for (const ch of b32.replace(/[=\\s]/g, '').toUpperCase()) bits += alphabet.indexOf(ch).toString(2).padStart(5, '0');",
+                  "  let hex = '';",
+                  "  for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                  "  const counter = Math.floor(Date.now() / 30000).toString(16).padStart(16, '0');",
+                  "  const h = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(counter), CryptoJS.enc.Hex.parse(hex)).toString();",
+                  "  const o = parseInt(h.slice(-1), 16);",
+                  "  return String((parseInt(h.substr(o * 2, 8), 16) & 0x7fffffff) % 1000000).padStart(6, '0');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Signed in as admin', () => pm.expect(b.user.role).to.eql('admin'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"verifyMfa\",\n  \"data\": {\n    \"token\": \"{{mfaToken}}\",\n    \"code\": \"{{mfaCode}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Uses the TOTP secret from the environment when present; otherwise the manual **mfaCode** value."
+          }
+        },
+        {
+          "name": "Dashboard stats",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Counts users, enrolments, completions and reviews', () => { const s = pm.response.json().stats; ['users','enrollments','completions','awaiting_review'].forEach(k => pm.expect(s).to.have.property(k)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"stats\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Approve the resubmitted course",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"approveCourse\",\n  \"data\": {\n    \"versionId\": \"{{versionId}}\",\n    \"note\": \"Looks good.\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Publish (Admin may publish too)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"publish\",\n  \"data\": {\n    \"id\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Course is now in the catalogue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Found in catalogue', () => pm.expect(pm.response.json().courses.some(c => c.id === pm.collectionVariables.get('courseId'))).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"catalog\",\n  \"data\": {\n    \"q\": \"Postman Course\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Review history keeps every decision (CR-03)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Approved + rejected kept', () => pm.expect(pm.response.json().reviews.map(r => r.decision)).to.eql(['approved', 'rejected']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"get\",\n  \"data\": {\n    \"id\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Who am I (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('adminId', pm.response.json().user.id);",
+                  "pm.test('Is the first Admin', () => pm.expect(pm.response.json().user.isRoot).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"me\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Demoting the first Admin is blocked (AD-04)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AD-04: 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"changeRole\",\n  \"data\": {\n    \"userId\": \"{{adminId}}\",\n    \"role\": \"student\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Deactivating the first Admin is blocked (AD-04)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AD-04: 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"setActive\",\n  \"data\": {\n    \"userId\": \"{{adminId}}\",\n    \"active\": false,\n    \"reason\": \"test\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Teacher application queue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const a = pm.response.json().applications.find(x => x.email === pm.collectionVariables.get('newStudentEmail'));",
+                  "pm.test('New application is listed', () => pm.expect(a).to.be.an('object'));",
+                  "pm.collectionVariables.set('applicationId', a.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"applications\",\n  \"data\": {\n    \"status\": \"pending\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Decline without a reason is refused",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"decideApplication\",\n  \"data\": {\n    \"id\": \"{{applicationId}}\",\n    \"decision\": \"decline\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Decline with a reason",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"decideApplication\",\n  \"data\": {\n    \"id\": \"{{applicationId}}\",\n    \"decision\": \"decline\",\n    \"reason\": \"Please add a credential link and apply again.\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Find users by search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Found the new student', () => pm.expect(pm.response.json().users[0].email).to.eql(pm.collectionVariables.get('newStudentEmail')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"users\",\n  \"data\": {\n    \"q\": \"{{newStudentEmail}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Change role: Student → Teacher (AD-03)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"changeRole\",\n  \"data\": {\n    \"userId\": \"{{newStudentId}}\",\n    \"role\": \"teacher\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Change role back: Teacher → Student",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"changeRole\",\n  \"data\": {\n    \"userId\": \"{{newStudentId}}\",\n    \"role\": \"student\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Deactivate needs a reason",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"setActive\",\n  \"data\": {\n    \"userId\": \"{{newStudentId}}\",\n    \"active\": false\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Deactivate the account (AD-05)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"setActive\",\n  \"data\": {\n    \"userId\": \"{{newStudentId}}\",\n    \"active\": false,\n    \"reason\": \"Postman demonstration\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reactivate the account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"setActive\",\n  \"data\": {\n    \"userId\": \"{{newStudentId}}\",\n    \"active\": true\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Audit log: blocked attempts are recorded (AD-06)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('At least one blocked attempt logged', () => pm.expect(b.total).to.be.above(0));",
+                  "pm.test('Entries hold actor, action, target, values and IP', () => { const e = b.entries[0]; ['actor_email','action','target_id','new_values','ip','created_at'].forEach(k => pm.expect(e).to.have.property(k)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"audit\",\n  \"data\": {\n    \"action\": \"user.role_change_blocked\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Audit log: filter by date",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has entries', () => pm.expect(pm.response.json().total).to.be.above(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"audit\",\n  \"data\": {\n    \"from\": \"2020-01-01\",\n    \"to\": \"2100-01-01\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Audit log: CSV export",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('CSV header', () => pm.expect(pm.response.json().csv.split('\\r\\n')[0]).to.include('id,created_at,actor_email'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"auditCsv\",\n  \"data\": {\n    \"action\": \"user.role_change\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sign out (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 Student learns and hits the quiz lock",
+      "description": "EN-01, progress, video resume, QZ-01/QZ-02.",
+      "item": [
+        {
+          "name": "Sign in as student (no second factor)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Students get a session straight away', () => pm.expect(pm.response.json().user.role).to.eql('student'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"login\",\n  \"data\": {\n    \"email\": \"{{studentEmail}}\",\n    \"password\": \"{{studentPassword}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Enrol in the new course",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Enrolled', () => pm.expect(pm.response.json().enrollmentId).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"enrol\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Enrol again: no duplicate (EN-01)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('EN-01: alreadyEnrolled', () => pm.expect(pm.response.json().alreadyEnrolled).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"enrol\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Course player (outline + progress)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('0% progress', () => pm.expect(pm.response.json().progress.percent).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"player\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Open a video lesson",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Video lesson', () => pm.expect(pm.response.json().lesson.type).to.eql('video'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"lesson\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l2\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Save video position",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"savePosition\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l2\",\n    \"positionSec\": 42.5\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reopen: resumes at the saved position",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('positionSec = 42.5', () => pm.expect(pm.response.json().positionSec).to.eql(42.5));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"lesson\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l2\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark lesson 1 complete",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Progress 33%', () => pm.expect(pm.response.json().progress.percent).to.eql(33));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"completeLesson\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l1\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Open the quiz: answers are hidden",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('No correct answers sent to learners', () => b.quiz.questions.forEach(q => pm.expect(q).to.not.have.property('correct')));",
+                  "pm.test('QZ-01: 70% pass mark, 3 attempts', () => { pm.expect(b.state.passMark).to.eql(70); pm.expect(b.state.attemptsLeft).to.eql(3); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"quiz\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"quizId\": \"q1\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Failed attempt 1 (score 0%)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Not passed, 2 left', () => { const b = pm.response.json(); pm.expect(b.result.passed).to.eql(false); pm.expect(b.state.attemptsLeft).to.eql(2); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"submitQuiz\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"quizId\": \"q1\",\n    \"answers\": {\n      \"a\": [\n        \"y\"\n      ],\n      \"b\": [\n        \"false\"\n      ],\n      \"c\": [\n        \"n\"\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Attempt 2 (66.67% is below the 70% pass mark)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('66.67% fails; multi-select must match exactly', () => { const b = pm.response.json(); pm.expect(b.result.score).to.eql(66.67); pm.expect(b.result.passed).to.eql(false); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"submitQuiz\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"quizId\": \"q1\",\n    \"answers\": {\n      \"a\": [\n        \"x\"\n      ],\n      \"b\": [\n        \"true\"\n      ],\n      \"c\": [\n        \"m\"\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Failed attempt 3 locks the quiz for 24h (QZ-02)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('QZ-02: locked for ~24h', () => { const h = (new Date(pm.response.json().state.lockedUntil) - Date.now()) / 3600000; pm.expect(h).to.be.within(23.9, 24); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"submitQuiz\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"quizId\": \"q1\",\n    \"answers\": {\n      \"a\": [\n        \"y\"\n      ],\n      \"b\": [\n        \"false\"\n      ],\n      \"c\": [\n        \"n\"\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Attempt 4 is refused while locked",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 423', () => pm.response.to.have.status(423));",
+                  "pm.test('QUIZ_LOCKED', () => pm.expect(pm.response.json().code).to.eql('QUIZ_LOCKED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"submitQuiz\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"quizId\": \"q1\",\n    \"answers\": {\n      \"a\": [\n        \"x\"\n      ],\n      \"b\": [\n        \"true\"\n      ],\n      \"c\": [\n        \"m\",\n        \"o\"\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sign out (student)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 Admin resets the quiz attempts",
+      "item": [
+        {
+          "name": "Sign in as admin (step 1: password)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AD-07: admin must pass a second factor (no session yet)', () => { pm.expect(b.mfa).to.be.an('object'); pm.expect(b.user).to.be.undefined; });",
+                  "pm.collectionVariables.set('mfaToken', b.mfa.token);",
+                  "console.log('2FA method: ' + b.mfa.method + (b.mfa.method === 'email' ? ' — copy the code printed in the API terminal into the mfaCode variable' : ''));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"login\",\n  \"data\": {\n    \"email\": \"{{adminEmail}}\",\n    \"password\": \"{{adminPassword}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Admins and Teachers get an MFA step instead of a session (AD-07). If **adminTotpSecret** is set, the next request generates the authenticator code itself. Otherwise copy the 6-digit code printed in the API terminal into the **mfaCode** environment variable before sending step 2."
+          }
+        },
+        {
+          "name": "Sign in as admin (step 2: 6-digit code)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('adminTotpSecret');",
+                  "if (secret) pm.variables.set('mfaCode', totp(secret));",
+                  "function totp(b32) {",
+                  "  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                  "  let bits = '';",
+                  "  for (const ch of b32.replace(/[=\\s]/g, '').toUpperCase()) bits += alphabet.indexOf(ch).toString(2).padStart(5, '0');",
+                  "  let hex = '';",
+                  "  for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                  "  const counter = Math.floor(Date.now() / 30000).toString(16).padStart(16, '0');",
+                  "  const h = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(counter), CryptoJS.enc.Hex.parse(hex)).toString();",
+                  "  const o = parseInt(h.slice(-1), 16);",
+                  "  return String((parseInt(h.substr(o * 2, 8), 16) & 0x7fffffff) % 1000000).padStart(6, '0');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Signed in as admin', () => pm.expect(b.user.role).to.eql('admin'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"verifyMfa\",\n  \"data\": {\n    \"token\": \"{{mfaToken}}\",\n    \"code\": \"{{mfaCode}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Uses the TOTP secret from the environment when present; otherwise the manual **mfaCode** value."
+          }
+        },
+        {
+          "name": "Learners of the course with quiz status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const l = pm.response.json().learners.find(x => x.email === pm.environment.get('studentEmail'));",
+                  "pm.test('Learner shows the lock', () => pm.expect(l.quizzes[0].lockedUntil).to.be.a('string'));",
+                  "pm.collectionVariables.set('enrollmentId', l.enrollmentId);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"learners\",\n  \"data\": {\n    \"id\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reset attempts (QZ-02: Teacher or Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"resetAttempts\",\n  \"data\": {\n    \"enrollmentId\": \"{{enrollmentId}}\",\n    \"quizId\": \"q1\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sign out (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 Student completes and gets a certificate",
+      "description": "CC-01 and CC-02.",
+      "item": [
+        {
+          "name": "Sign in as student",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"login\",\n  \"data\": {\n    \"email\": \"{{studentEmail}}\",\n    \"password\": \"{{studentPassword}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Attempts are back to 3",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('3 attempts left', () => pm.expect(pm.response.json().state.attemptsLeft).to.eql(3));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"quiz\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"quizId\": \"q1\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Pass the quiz (100%)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Passed', () => pm.expect(b.result.passed).to.eql(true));",
+                  "pm.test('CC-01: no certificate yet, lesson 2 is still required', () => pm.expect(b.certificate).to.eql(null));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"submitQuiz\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"quizId\": \"q1\",\n    \"answers\": {\n      \"a\": [\n        \"x\"\n      ],\n      \"b\": [\n        \"true\"\n      ],\n      \"c\": [\n        \"m\",\n        \"o\"\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Complete the last required lesson → certificate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Progress 100%', () => pm.expect(b.progress.percent).to.eql(100));",
+                  "pm.test('CC-02: certificate issued with a unique code', () => pm.expect(b.certificate.code).to.match(/^EL-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/));",
+                  "pm.collectionVariables.set('certCode', b.certificate.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"completeLesson\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l2\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Completing again does not issue a second certificate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('CC-02: no new certificate', () => pm.expect(pm.response.json().certificate).to.eql(null));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"completeLesson\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l2\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Learner dashboard",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Course shows the certificate', () => pm.expect(pm.response.json().courses.find(c => c.id === pm.collectionVariables.get('courseId')).certificate.code).to.eql(pm.collectionVariables.get('certCode')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"dashboard\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "account"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sign out (student)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Public verification: valid",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Valid', () => pm.expect(pm.response.json().certificate.valid).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/certificates/{{certCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "certificates",
+                "{{certCode}}"
+              ]
+            },
+            "description": "Anyone can verify a certificate by its code."
+          }
+        },
+        {
+          "name": "Certificate PDF",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Is a PDF', () => pm.expect(pm.response.headers.get('Content-Type')).to.include('application/pdf'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/certificates/{{certCode}}?format=pdf",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "certificates",
+                "{{certCode}}"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "pdf"
+                }
+              ]
+            },
+            "description": "In Postman, use \"Send and Download\" to save the PDF."
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 Admin revokes the certificate",
+      "description": "CC-03.",
+      "item": [
+        {
+          "name": "Sign in as admin (step 1: password)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('AD-07: admin must pass a second factor (no session yet)', () => { pm.expect(b.mfa).to.be.an('object'); pm.expect(b.user).to.be.undefined; });",
+                  "pm.collectionVariables.set('mfaToken', b.mfa.token);",
+                  "console.log('2FA method: ' + b.mfa.method + (b.mfa.method === 'email' ? ' — copy the code printed in the API terminal into the mfaCode variable' : ''));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"login\",\n  \"data\": {\n    \"email\": \"{{adminEmail}}\",\n    \"password\": \"{{adminPassword}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Admins and Teachers get an MFA step instead of a session (AD-07). If **adminTotpSecret** is set, the next request generates the authenticator code itself. Otherwise copy the 6-digit code printed in the API terminal into the **mfaCode** environment variable before sending step 2."
+          }
+        },
+        {
+          "name": "Sign in as admin (step 2: 6-digit code)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const secret = pm.environment.get('adminTotpSecret');",
+                  "if (secret) pm.variables.set('mfaCode', totp(secret));",
+                  "function totp(b32) {",
+                  "  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                  "  let bits = '';",
+                  "  for (const ch of b32.replace(/[=\\s]/g, '').toUpperCase()) bits += alphabet.indexOf(ch).toString(2).padStart(5, '0');",
+                  "  let hex = '';",
+                  "  for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                  "  const counter = Math.floor(Date.now() / 30000).toString(16).padStart(16, '0');",
+                  "  const h = CryptoJS.HmacSHA1(CryptoJS.enc.Hex.parse(counter), CryptoJS.enc.Hex.parse(hex)).toString();",
+                  "  const o = parseInt(h.slice(-1), 16);",
+                  "  return String((parseInt(h.substr(o * 2, 8), 16) & 0x7fffffff) % 1000000).padStart(6, '0');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Signed in as admin', () => pm.expect(b.user.role).to.eql('admin'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"verifyMfa\",\n  \"data\": {\n    \"token\": \"{{mfaToken}}\",\n    \"code\": \"{{mfaCode}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            },
+            "description": "Uses the TOTP secret from the environment when present; otherwise the manual **mfaCode** value."
+          }
+        },
+        {
+          "name": "Search certificates",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('certId', pm.response.json().certificates[0].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"certificates\",\n  \"data\": {\n    \"q\": \"{{certCode}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke without a reason is refused",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"revokeCertificate\",\n  \"data\": {\n    \"id\": \"{{certId}}\",\n    \"reason\": \"\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke with a reason (CC-03)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"revokeCertificate\",\n  \"data\": {\n    \"id\": \"{{certId}}\",\n    \"reason\": \"Postman demonstration of revocation\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "admin"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Archive the test course (CR-05: enrolled courses cannot be deleted)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('CR-05: delete refused, archive instead', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"remove\",\n  \"data\": {\n    \"id\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Archive instead",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"archive\",\n  \"data\": {\n    \"id\": \"{{courseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sign out (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Public verification now shows Revoked",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Revoked with reason', () => { const c = pm.response.json().certificate; pm.expect(c.valid).to.eql(false); pm.expect(c.revokeReason).to.include('Postman'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/certificates/{{certCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "certificates",
+                "{{certCode}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoked PDF is no longer served",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 410', () => pm.response.to.have.status(410));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/certificates/{{certCode}}?format=pdf",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "certificates",
+                "{{certCode}}"
+              ],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "pdf"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "10 Isolation between organisations",
+      "description": "Everything from {{tenant}} is invisible from {{otherTenant}}, at the API and in PostgreSQL (row-level security).",
+      "item": [
+        {
+          "name": "Sign in as student in {{tenant}}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"login\",\n  \"data\": {\n    \"email\": \"{{studentEmail}}\",\n    \"password\": \"{{studentPassword}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        },
+        {
+          "name": "The same session is signed out in {{otherTenant}}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Session from another organisation: 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"dashboard\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{otherTenant}}/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{otherTenant}}",
+                "account"
+              ]
+            }
+          }
+        },
+        {
+          "name": "{{otherTenant}} catalogue never lists {{tenant}} courses",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Course of {{tenant}} absent', () => pm.expect(pm.response.json().courses.map(c => c.id)).to.not.include(pm.collectionVariables.get('demoCourseId')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"catalog\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{otherTenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{otherTenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Opening a {{tenant}} course through {{otherTenant}} is \"not found\"",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"detail\",\n  \"data\": {\n    \"id\": \"{{demoCourseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{otherTenant}}/courses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{otherTenant}}",
+                "courses"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Enrolling in a {{tenant}} course through {{otherTenant}} needs an account there",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Not signed in there', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"enrol\",\n  \"data\": {\n    \"courseId\": \"{{demoCourseId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{otherTenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{otherTenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sign out (student)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"logout\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "auth"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Certificate of {{tenant}} not found via {{otherTenant}}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{otherTenant}}/certificates/{{certCode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{otherTenant}}",
+                "certificates",
+                "{{certCode}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Unknown organisation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('TENANT_NOT_FOUND', () => pm.expect(pm.response.json().code).to.eql('TENANT_NOT_FOUND'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"me\",\n  \"data\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/no-such-org/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "no-such-org",
+                "auth"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "mfaToken",
+      "value": ""
+    },
+    {
+      "key": "tenantId",
+      "value": ""
+    },
+    {
+      "key": "otherTenantId",
+      "value": ""
+    },
+    {
+      "key": "newTenantId",
+      "value": ""
+    },
+    {
+      "key": "demoCourseId",
+      "value": ""
+    },
+    {
+      "key": "demoPreviewLessonId",
+      "value": ""
+    },
+    {
+      "key": "demoLockedLessonId",
+      "value": ""
+    },
+    {
+      "key": "newStudentEmail",
+      "value": ""
+    },
+    {
+      "key": "newStudentId",
+      "value": ""
+    },
+    {
+      "key": "courseId",
+      "value": ""
+    },
+    {
+      "key": "versionId",
+      "value": ""
+    },
+    {
+      "key": "adminId",
+      "value": ""
+    },
+    {
+      "key": "applicationId",
+      "value": ""
+    },
+    {
+      "key": "enrollmentId",
+      "value": ""
+    },
+    {
+      "key": "certCode",
+      "value": ""
+    },
+    {
+      "key": "certId",
+      "value": ""
+    }
+  ]
+}
