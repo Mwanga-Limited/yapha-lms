@@ -12,7 +12,9 @@ export const settingsSchema = z.object({
   branding: z.object({
     displayName: z.string().trim().max(80).default(''),          // shown instead of the organisation name when set
     logoFileId: z.string().uuid().nullable().default(null),
-    accentColor: hex.default('#F2CC3D'),
+    accentColor: hex.default('#F2CC3D'),                          // highlights, progress, main call to action
+    primaryColor: hex.default('#17324D'),                         // structure: header, headings, buttons (a dark colour)
+    header: z.enum(['dark', 'light']).default('dark'),           // light suits logos with dark lettering
   }).prefault({}),
   quiz: z.object({
     passMark: z.number().int().min(1).max(100).default(70),      // QZ-01
@@ -44,7 +46,7 @@ export function publicTenant(tenant) {
   const s = settingsOf(tenant);
   return {
     id: tenant.id, slug: tenant.slug, name: tenantName(tenant), legalName: tenant.name, status: tenant.status,
-    branding: { accentColor: s.branding.accentColor, logoUrl: s.branding.logoFileId ? `${apiBase(tenant)}/files/${s.branding.logoFileId}` : null },
+    branding: { accentColor: s.branding.accentColor, primaryColor: s.branding.primaryColor, header: s.branding.header, logoUrl: s.branding.logoFileId ? `${apiBase(tenant)}/files/${s.branding.logoFileId}` : null },
     quiz: s.quiz,
     access: { signup: s.access.signup, allowedDomains: s.access.allowedDomains },
     auth: s.auth,

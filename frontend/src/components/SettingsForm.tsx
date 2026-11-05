@@ -34,6 +34,20 @@ export function SettingsForm({ value, onChange, logoPreviewUrl, canUploadLogo }:
           </div>
         </div>
         <div className="field">
+          <label htmlFor="primary">Main colour</label>
+          <div className="color-row">
+            <input id="primary" type="color" value={value.branding.primaryColor} onChange={(e) => set('branding', { primaryColor: e.target.value.toUpperCase() })} />
+            <code>{value.branding.primaryColor}</code>
+            <span className="swatch-demo" style={{ background: value.branding.primaryColor, color: '#fff' }}>Headings, buttons, header</span>
+          </div>
+          <small className="hint">Choose a dark colour so white text on it stays readable.</small>
+        </div>
+        <div className="field">
+          <span className="label-like">Header</span>
+          <label className="check"><input type="radio" name="header" checked={value.branding.header === 'dark'} onChange={() => set('branding', { header: 'dark' })} /> Dark: the main colour, with white text</label>
+          <label className="check"><input type="radio" name="header" checked={value.branding.header === 'light'} onChange={() => set('branding', { header: 'light' })} /> Light: white, best for logos with dark lettering</label>
+        </div>
+        <div className="field">
           <span className="label-like">Logo</span>
           <div className="row-gap">
             {logo && value.branding.logoFileId ? <img src={logo} alt="Logo" className="logo-preview" /> : <span className="muted small">No logo</span>}

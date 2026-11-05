@@ -18,14 +18,29 @@ interface AuthState {
 const AuthContext = createContext<AuthState | null>(null);
 
 /** Apply the organisation's accent colour (the highlighter) to the whole interface. */
-export function applyBranding(accent: string | undefined) {
+const HEX = /^#[0-9a-f]{6}$/i;
+const rgb = (hex: string) => { const n = parseInt(hex.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+/** The colour mixed with white: share 0 = unchanged, 1 = white. */
+const tint = (hex: string, share: number) => `rgb(${rgb(hex).map((c) => Math.round(c + (255 - c) * share)).join(', ')})`;
+/** The colour mixed with black: readable as small text on light backgrounds. */
+const shade = (hex: string, share: number) => `rgb(${rgb(hex).map((c) => Math.round(c * (1 - share))).join(', ')})`;
+
+/** The organisation's colours: accent (highlights) and primary (header, headings, buttons). */
+export function applyBranding(accent: string | undefined, primary?: string) {
   const root = document.documentElement;
-  if (!accent || !/^#[0-9a-f]{6}$/i.test(accent)) { root.style.removeProperty('--hl'); root.style.removeProperty('--hl-soft'); return; }
-  const n = parseInt(accent.slice(1), 16);
-  const [r, g, b] = [n >> 16, (n >> 8) & 255, n & 255];
-  const mix = (c: number) => Math.round(c + (255 - c) * 0.72);
-  root.style.setProperty('--hl', accent);
-  root.style.setProperty('--hl-soft', `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`);
+  if (accent && HEX.test(accent)) {
+    root.style.setProperty('--hl', accent);
+    root.style.setProperty('--hl-soft', tint(accent, 0.72));
+    root.style.setProperty('--hl-wash', tint(accent, 0.9));
+    root.style.setProperty('--hl-dot', tint(accent, 0.6));
+    root.style.setProperty('--hl-ink', shade(accent, 0.4));
+    root.style.setProperty('--hl-strong', shade(accent, 0.22));
+  } else { for (const v of ['--hl', '--hl-soft', '--hl-wash', '--hl-dot', '--hl-ink', '--hl-strong']) root.style.removeProperty(v); }
+  if (primary && HEX.test(primary)) {
+    root.style.setProperty('--ink', primary);
+    root.style.setProperty('--ink-2', tint(primary, 0.18));
+    root.style.setProperty('--ink-3', tint(primary, 0.38));
+  } else { root.style.removeProperty('--ink'); root.style.removeProperty('--ink-2'); root.style.removeProperty('--ink-3'); }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -38,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const setTenant = useCallback((t: TenantInfo) => {
     setTenantState(t);
     setSiteName(t.name);
-    applyBranding(t.branding.accentColor);
+    applyBranding(t.branding.accentColor, t.branding.primaryColor);
   }, []);
 
   const refresh = useCallback(async () => {

@@ -21,7 +21,7 @@ Words the app uses for its own pages (`platform`, `register`, `api`, `admin`, `l
 - **Separate accounts per organisation.** The same email can join two organisations as two unrelated accounts with separate passwords. Each organisation has its own session cookie (`el_<slug>`), and a session from one organisation is rejected by every other.
 - **Isolation enforced by PostgreSQL**, not just application code. Every table carries `tenant_id` and has a row-level security policy. Each API request runs in one transaction as the restricted role `elearning_app`, with `app.tenant_id` set to the organisation in the URL, so a query can only ever see or write that organisation's rows. This holds even if application code forgets a `WHERE` clause, and even when the app connects as the `postgres` superuser. See `migrations/003_tenant_isolation.sql`.
 - **Per-organisation configuration** (Admin › Settings, or the platform console):
-  - **Branding:** display name, logo, accent colour. Used on every page, in emails (sender name) and on certificates.
+  - **Branding:** display name, logo, accent colour, main colour (header, headings, buttons) and a dark or light header. Used on every page, in emails (sender name) and on certificates.
   - **Quiz rules:** pass mark, attempts before lock, lock hours. Defaults: 70%, 3 and 24h.
   - **Who can join:** open sign-up or invite-only; optional allowed email domains (e.g. `acme.com`).
   - **Sign-in options:** Google on/off; require two-step sign-in for students too.
@@ -44,6 +44,7 @@ cp .env.example .env            # set DATABASE_URL, JWT_SECRET, SUPERADMIN_EMAIL
 npm run migrate                 # tables, row-level security, the elearning_app role
 npm run seed:superadmin         # the platform super admin, once
 npm run seed:demo               # optional: two demo organisations, "acme" and "globex"
+npm run brand:yapha             # optional: Yapha's logo, orange accent, navy main colour and light header
 npm run dev                     # API on http://localhost:4000
 
 # 3. Frontend (second terminal)

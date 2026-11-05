@@ -84,7 +84,7 @@ export async function revokeCertificateForEnrollment(db, ctx, enrollmentId, reas
 export function certificatePdf(cert, { tenant, logoPath = null } = {}) {
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 0, info: { Title: `Certificate ${cert.code}` } });
   const W = doc.page.width, H = doc.page.height;
-  const green = '#17324d', gold = settingsOf(tenant).branding.accentColor, ink = '#1c1c1c';
+  const green = settingsOf(tenant).branding.primaryColor, gold = settingsOf(tenant).branding.accentColor, ink = '#1c1c1c';
   const issuer = cert.issuer_name || tenantName(tenant);
 
   doc.rect(0, 0, W, H).fill('#fbfbf8');

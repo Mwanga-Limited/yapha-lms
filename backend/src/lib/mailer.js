@@ -16,12 +16,13 @@ if (config.mail.transport === 'smtp') {
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function layout(title, paragraphs, action) {
+  const brand = currentTenant() ? settingsOf(currentTenant()).branding.primaryColor : '#17324d';
   const btn = action
-    ? `<p style="margin:28px 0"><a href="${esc(action.url)}" style="background:#17324d;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">${esc(action.label)}</a></p>
+    ? `<p style="margin:28px 0"><a href="${esc(action.url)}" style="background:${brand};color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">${esc(action.label)}</a></p>
        <p style="color:#6b6b6b;font-size:13px">Or open this link: ${esc(action.url)}</p>`
     : '';
   return `<div style="font-family:Georgia,serif;max-width:560px;margin:auto;padding:24px;color:#1c1c1c">
-    <h2 style="color:#17324d;margin-top:0">${esc(title)}</h2>
+    <h2 style="color:${brand};margin-top:0">${esc(title)}</h2>
     ${paragraphs.map((p) => `<p style="font-family:Arial,sans-serif;line-height:1.5">${esc(p)}</p>`).join('')}
     ${btn}
     <hr style="border:none;border-top:1px solid #e5e1d8;margin-top:32px"/>
