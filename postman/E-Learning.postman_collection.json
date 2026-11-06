@@ -4585,7 +4585,53 @@
           }
         },
         {
-          "name": "Complete the last required lesson → certificate",
+          "name": "A video cannot be ticked off by hand",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('WATCH_VIDEO', () => pm.expect(pm.response.json().code).to.eql('WATCH_VIDEO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"completeLesson\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l2\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            },
+            "description": "Video lessons complete only by watching them. The player reports its position every few seconds (savePosition)."
+          }
+        },
+        {
+          "name": "Start the video (position 0, length 6 s)",
           "event": [
             {
               "listen": "test",
@@ -4593,7 +4639,205 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nothing watched yet', () => pm.expect(pm.response.json().completed).to.eql(false));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"savePosition\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l2\",\n    \"positionSec\": 0,\n    \"durationSec\": 6\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Skip straight to the end: not counted",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Skipping ahead does not count', () => { const b = pm.response.json(); pm.expect(b.completed).to.eql(false); pm.expect(b.watch.watchedSec).to.eql(0); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"savePosition\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l2\",\n    \"positionSec\": 6,\n    \"durationSec\": 6\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Back to the start",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"savePosition\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l2\",\n    \"positionSec\": 0,\n    \"durationSec\": 6\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Watch 3 s (sent 3 s later)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 3200);   // wait, as if the video were playing"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Half watched', () => { const b = pm.response.json(); pm.expect(b.watch.percent).to.eql(50); pm.expect(b.completed).to.eql(false); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"savePosition\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l2\",\n    \"positionSec\": 3,\n    \"durationSec\": 6\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "t",
+                "{{tenant}}",
+                "learn"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Watch to the end (sent 3 s later) → lesson completes → certificate",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 3200);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
                   "const b = pm.response.json();",
+                  "pm.test('Video completes itself once watched', () => pm.expect(b.completed).to.eql(true));",
                   "pm.test('Progress 100%', () => pm.expect(b.progress.percent).to.eql(100));",
                   "pm.test('CC-02: certificate issued with a unique code', () => pm.expect(b.certificate.code).to.match(/^EL-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/));",
                   "pm.collectionVariables.set('certCode', b.certificate.code);"
@@ -4611,7 +4855,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"action\": \"completeLesson\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l2\"\n  }\n}",
+              "raw": "{\n  \"action\": \"savePosition\",\n  \"data\": {\n    \"courseId\": \"{{courseId}}\",\n    \"lessonId\": \"l2\",\n    \"positionSec\": 6,\n    \"durationSec\": 6\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"

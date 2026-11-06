@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ApiError, api, type LessonPayload, type OutlineItem, type OutlineSection, type Progress, apiUrl } from '../../api';
 import { LessonView } from '../../components/LessonView';
 import { Alert, Button, Empty, Loading, ProgressBar, useAction, useDocumentTitle, useLoad, useToast } from '../../ui';
+import { watchLabel, type WatchState } from '../../watch';
 import { QuizView, type QuizSubmitted } from './QuizView';
 
 interface PlayerData {
@@ -20,7 +21,7 @@ export function Player() {
   const nav = useNavigate();
   const toast = useToast();
   const { data, error, loading, reload, setData } = useLoad(() => api<PlayerData>('learn', 'player', { courseId }), [courseId]);
-  const [lesson, setLesson] = useState<{ lesson: LessonPayload; completed: boolean; positionSec: number } | null>(null);
+  const [lesson, setLesson] = useState<{ lesson: LessonPayload; completed: boolean; positionSec: number; watch: WatchState | null } | null>(null);
   const [drawer, setDrawer] = useState(false);
   const { busy, run } = useAction();
   useDocumentTitle(data?.course.title ?? 'Course');
@@ -33,16 +34,28 @@ export function Player() {
   useEffect(() => {
     setLesson(null);
     if (!current || current.kind !== 'lesson') return;
-    api<{ lesson: LessonPayload; completed: boolean; positionSec: number }>('learn', 'lesson', { courseId, lessonId: current.id })
+    api<{ lesson: LessonPayload; completed: boolean; positionSec: number; watch: WatchState | null }>('learn', 'lesson', { courseId, lessonId: current.id })
       .then(setLesson).catch((e) => toast(e.message, 'error'));
     setDrawer(false);
   }, [courseId, current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const go = (it?: OutlineItem) => { if (it) { setParams({ item: it.id }); window.scrollTo({ top: 0 }); } };
 
-  const savePosition = useCallback((sec: number) => {
-    if (current) void api('learn', 'savePosition', { courseId, lessonId: current.id, positionSec: Math.round(sec * 10) / 10 }).catch(() => {});
-  }, [courseId, current]);
+  // Videos: report the position; the server counts what was really watched and completes the lesson itself.
+  const savePosition = useCallback((sec: number, durationSec?: number) => {
+    if (!current) return;
+    const lessonId = current.id;
+    void api<{ watch?: WatchState; completed?: boolean; progress?: Progress; certificate?: { code: string } | null }>('learn', 'savePosition', {
+      courseId, lessonId, positionSec: Math.round(sec * 10) / 10,
+      ...(durationSec ? { durationSec: Math.round(durationSec * 10) / 10 } : {}),
+    }).then((r) => {
+      if (r.watch) setLesson((l) => (l && l.lesson.id === lessonId ? { ...l, watch: r.watch!, completed: l.completed || !!r.completed } : l));
+      if (r.progress) {
+        applyProgress(r.progress, lessonId, { done: true }, r.certificate);
+        if (!r.certificate) toast('Video watched. Lesson complete.');
+      }
+    }).catch(() => {});
+  }, [courseId, current]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyProgress = (progress: Progress, doneId: string, patch?: Partial<OutlineItem>, certificate?: { code: string } | null) => {
     setData((d) => d && ({
@@ -135,10 +148,20 @@ export function Player() {
               </div>
               {current.kind === 'lesson' && (lesson && lesson.lesson.id === current.id ? (
                 <>
-                  <LessonView lesson={lesson.lesson} startAt={lesson.positionSec} onPosition={savePosition}
-                    onEnded={() => { if (!current.done) void complete(); }} />
+                  <LessonView lesson={lesson.lesson} startAt={lesson.positionSec} onPosition={savePosition} />
                   <div className="lesson-actions">
-                    {current.done ? <span className="ok-text">✓ Completed</span> : <Button busy={busy} onClick={complete}>Mark as complete</Button>}
+                    {current.done ? (
+                      <>
+                        <span className="ok-text">✓ Completed</span>
+                        {items[idx + 1] && lesson.lesson.type === 'video' && <Button onClick={() => go(items[idx + 1])}>Next: {items[idx + 1].title}</Button>}
+                      </>
+                    ) : lesson.lesson.type === 'video' ? (
+                      // No "Mark as complete" for videos: watching completes them.
+                      <div className="watch-progress" data-testid="watch-progress" style={{ flex: 1, minWidth: 240, maxWidth: 520, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <ProgressBar percent={lesson.watch?.percent ?? 0} label="Video watched" />
+                        <p className="muted small" style={{ margin: 0 }}>{watchLabel(lesson.watch)}</p>
+                      </div>
+                    ) : <Button busy={busy} onClick={complete}>Mark as complete</Button>}
                   </div>
                 </>
               ) : <Loading />)}

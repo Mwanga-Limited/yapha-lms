@@ -79,7 +79,8 @@ The full test plan (automated tests, the Postman collection in `postman/`, and a
 
 ```bash
 createdb elearning_test
-cd backend && npm test          # 43 tests; TEST_DATABASE_URL in .env (a separate database, erased on each run)
+cd backend && npm test          # 50 tests; TEST_DATABASE_URL in .env (a separate database, erased on each run)
+cd frontend && npm test         # 21 tests (Vitest + React Testing Library), no database needed
 ```
 
 `test/tenancy.test.js` attacks the isolation directly:
@@ -123,6 +124,7 @@ All Phase 1 rules apply **within each organisation**:
 | AD-08 becoming a Teacher | application approved by an Admin, an Admin role change, or an Admin invitation as Teacher |
 | CR-01 … CR-05 | unchanged (see `routes/courses.js`, `routes/admin.js`) |
 | EN-01 … EN-03 | unchanged; Students only enrol |
+| Video lessons | complete only by watching (90% of the video, skipping ahead not counted): `learn.savePosition` completes them; `learn.completeLesson` refuses an unwatched video (`WATCH_VIDEO`) |
 | QZ-01 / QZ-02 | pass mark, attempts and lock hours from the organisation's settings (defaults 70% / 3 / 24h) |
 | CC-01 … CC-03 | unchanged; certificates carry the organisation name and the learner's member ID |
 | Isolation between organisations | row-level security on every table (`003_tenant_isolation.sql`), restricted role per request, per-organisation cookies, organisation-checked 2FA and invitation tokens |
@@ -149,6 +151,7 @@ backend/
   migrations/002_multitenancy.sql     tenants table, super admin role
   migrations/003_tenant_isolation.sql tenant_id everywhere, member IDs, row-level security, elearning_app role
   migrations/004_yapha.sql            the original organisation becomes Yapha at /yapha
+  migrations/005_video_watch.sql      watched time per video lesson (videos complete only by watching)
   src/app.js                          security headers, /api/t/:org and /api/platform, errors
   src/db.js                           per-request tenant scope (transaction + role + app.tenant_id)
   src/routes/index.js                 organisation resolution and request scoping
@@ -161,5 +164,5 @@ frontend/
   src/App.tsx, src/pages/             an organisation's site (router basename /<org>)
   src/platform/                       super admin console
   src/components/SettingsForm.tsx     organisation settings editor (Admin and super admin)
-postman/                              collection + environment (122 requests, 199 checks)
+postman/                              collection + environment (127 requests, 209 checks)
 ```

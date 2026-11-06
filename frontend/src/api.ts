@@ -63,6 +63,7 @@ export interface OutlineItem {
 }
 export interface OutlineSection { id: string; title: string; items: OutlineItem[] }
 
+export type { WatchState } from './watch';
 export interface LessonPayload {
   id: string; title: string; type: LessonType; body: string; videoUrl: string | null;
   fileUrl: string | null; fileName: string | null; durationMin: number | null;
