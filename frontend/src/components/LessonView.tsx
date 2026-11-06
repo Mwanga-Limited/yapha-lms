@@ -1,51 +1,69 @@
 import { useEffect, useRef } from 'react';
 import type { LessonPayload } from '../api';
+import { embedUrl, listenMessages, parseEmbedMessage, shouldReport } from '../watch';
 
-function embedUrl(url: string, start: number): string | null {
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace(/^www\./, '');
-    let yt: string | null = null;
-    if (host === 'youtu.be') yt = u.pathname.slice(1);
-    if (host.endsWith('youtube.com')) yt = u.searchParams.get('v') || u.pathname.match(/\/(embed|shorts)\/([\w-]+)/)?.[2] || null;
-    if (yt) return `https://www.youtube-nocookie.com/embed/${yt}?rel=0&start=${Math.floor(start)}`;
-    if (host.endsWith('vimeo.com')) {
-      const id = u.pathname.match(/(\d+)/)?.[1];
-      if (id) return `https://player.vimeo.com/video/${id}#t=${Math.floor(start)}s`;
-    }
-  } catch { /* not a URL */ }
-  return null;
-}
-
-/** Renders a video, text or downloadable-file lesson. onPosition is called while a native video plays. */
-export function LessonView({ lesson, startAt = 0, onPosition, onEnded }: {
-  lesson: LessonPayload; startAt?: number; onPosition?: (sec: number) => void; onEnded?: () => void;
+/**
+ * Renders a video, text or downloadable-file lesson.
+ * For videos, onPosition(positionSec, durationSec) is called while it plays (every few seconds), and on play,
+ * pause and end. The server works out how much has really been watched and completes the lesson itself.
+ */
+export function LessonView({ lesson, startAt = 0, onPosition }: {
+  lesson: LessonPayload; startAt?: number; onPosition?: (sec: number, durationSec?: number) => void;
 }) {
   const video = useRef<HTMLVideoElement>(null);
-  const lastSaved = useRef(0);
+  const frame = useRef<HTMLIFrameElement>(null);
+  const lastSaved = useRef<number | null>(null);
 
-  useEffect(() => { lastSaved.current = startAt; }, [lesson.id, startAt]);
+  useEffect(() => { lastSaved.current = null; }, [lesson.id]);
 
   const src = lesson.type === 'video' ? lesson.fileUrl || lesson.videoUrl : null;
-  const embed = src && !lesson.fileUrl ? embedUrl(src, startAt) : null;
+  const embed = src && !lesson.fileUrl ? embedUrl(src, startAt, window.location.origin) : null;
+
+  const report = (sec: number, duration: number | undefined, force = false) => {
+    if (!onPosition || !shouldReport(lastSaved.current, sec, force)) return;
+    lastSaved.current = sec;
+    onPosition(sec, duration && Number.isFinite(duration) ? duration : undefined);
+  };
+  const fromVideo = (force = false, atEnd = false) => {
+    const v = video.current;
+    if (!v) return;
+    report(atEnd ? v.duration : v.currentTime, v.duration, force);
+  };
+
+  // Embedded YouTube / Vimeo players report playback through window messages.
+  useEffect(() => {
+    if (!embed) return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== frame.current?.contentWindow) return;
+      const ev = parseEmbedMessage(e.origin, e.data);
+      if (!ev || ev.positionSec === null) return;
+      const atEnd = ev.state === 'ended' && ev.durationSec ? ev.durationSec : ev.positionSec;
+      report(atEnd, ev.durationSec ?? undefined, ev.state !== 'playing');
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [embed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const startListening = () => {
+    const w = frame.current?.contentWindow;
+    if (w && embed) for (const m of listenMessages(embed)) w.postMessage(m, '*');
+  };
 
   return (
     <article className="lesson">
       {lesson.type === 'video' && src && (embed ? (
         <div className="video-frame">
-          <iframe src={embed} title={lesson.title} allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen />
+          <iframe ref={frame} src={embed} title={lesson.title} onLoad={startListening}
+            allow="accelerometer; autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen />
         </div>
       ) : (
         <div className="video-frame">
           <video
             ref={video} src={src} controls playsInline preload="metadata"
             onLoadedMetadata={() => { if (video.current && startAt > 1 && startAt < video.current.duration - 2) video.current.currentTime = startAt; }}
-            onTimeUpdate={() => {
-              const t = video.current?.currentTime ?? 0;
-              if (onPosition && Math.abs(t - lastSaved.current) >= 10) { lastSaved.current = t; onPosition(t); }
-            }}
-            onPause={() => { const t = video.current?.currentTime ?? 0; lastSaved.current = t; onPosition?.(t); }}
-            onEnded={onEnded}
+            onPlay={() => fromVideo(true)}
+            onTimeUpdate={() => fromVideo()}
+            onPause={() => { if (!video.current?.ended) fromVideo(true); }}
+            onEnded={() => fromVideo(true, true)}
           />
         </div>
       ))}

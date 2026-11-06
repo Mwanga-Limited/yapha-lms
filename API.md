@@ -172,8 +172,8 @@ Only Student accounts can enrol and learn, so only Students earn certificates. A
 | `enrol` | `{ "courseId": "<courseId>" }` | 200, `enrollmentId` | Again → 200 with `alreadyEnrolled: true` (EN-01). Unverified email → 403 (EN-03). |
 | `player` | `{ "courseId": "<courseId>" }` | 200, outline with done ticks, `progress`, `resumeItemId`, `certificate` | Not enrolled → 403 `NOT_ENROLLED` (EN-02) |
 | `lesson` | `{ "courseId": "<courseId>", "lessonId": "l2" }` | 200, lesson content, `positionSec` | Not enrolled → 403 |
-| `savePosition` | `{ "courseId": "<courseId>", "lessonId": "l2", "positionSec": 42.5 }` | 200; next `lesson` call returns `positionSec: 42.5` | |
-| `completeLesson` | `{ "courseId": "<courseId>", "lessonId": "l1" }` | 200, new `progress`; `certificate` once everything required is done | |
+| `savePosition` | `{ "courseId": "<courseId>", "lessonId": "l2", "positionSec": 42.5, "durationSec": 300 }` | 200; next `lesson` call returns `positionSec: 42.5`. For a **video**, also `watch` (`watchedSec`, `durationSec`, `percent`, `requiredPercent: 90`) and `completed`. When 90% has been watched the lesson **completes itself**: the reply then also has `progress` and, if that finished the course, `certificate`. | The player sends this every 5 s while a video plays and on play, pause and end. A stretch counts as watched only if the real time since the last report could cover it (up to 2x speed), so jumping ahead adds nothing. |
+| `completeLesson` | `{ "courseId": "<courseId>", "lessonId": "l1" }` | 200, new `progress`; `certificate` once everything required is done | For a **video** lesson that hasn't been watched → 409 `WATCH_VIDEO` (videos complete only by watching). After it's watched → 200. |
 | `quiz` | `{ "courseId": "<courseId>", "quizId": "q1" }` | 200, questions **without** answers, attempts left | |
 | `submitQuiz` | `{ "courseId": "<courseId>", "quizId": "q1", "answers": { "a": ["x"], "b": ["true"], "c": ["m", "o"] } }` | 200, `score` 100, `passed` true | See the quiz test below |
 
@@ -317,7 +317,7 @@ To show the whole flow by hand, send these in order. Steps 2–5 build the cours
 3. **Admin:** `admin/reviewQueue` → `admin/rejectCourse` → `auth/logout`
 4. **Teacher:** `courses/get` (see the reason) → `courses/submit` → `auth/logout`
 5. **Admin:** `admin/reviewQueue` → `admin/approveCourse` → `courses/publish` → `admin/users` → `admin/changeRole` → `admin/audit` → `auth/logout`
-6. **Student** (`auth/login`): `learn/enrol` → `learn/player` → `learn/completeLesson` (l1, l2) → `learn/submitQuiz` (correct answers) → `account/dashboard` → `auth/logout`
+6. **Student** (`auth/login`): `learn/enrol` → `learn/player` → `learn/completeLesson` (l1) → `learn/savePosition` for l2 a few times as the video plays (it completes itself) → `learn/submitQuiz` (correct answers) → `account/dashboard` → `auth/logout`
 7. **Anyone:** `GET /api/t/acme/certificates/<code>` and `?format=pdf`
 8. **Admin:** `admin/certificates` → `admin/revokeCertificate` → verify the certificate again (now `valid: false`)
 

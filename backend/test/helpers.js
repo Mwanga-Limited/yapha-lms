@@ -77,6 +77,27 @@ export async function registerStudent(name, { verify = true, slug = TENANT } = {
   return { a, email, id: me.body.user.id, memberCode: me.body.user.memberCode };
 }
 
+/**
+ * Simulate a learner watching a video lesson to the end: the player reports its position every `step` seconds.
+ * Instead of really waiting, each report first moves the previous report's time back by `step` seconds,
+ * as if that much real time had passed. Returns the last savePosition response.
+ */
+export async function watchVideo(s, courseId, lessonId, { duration = 60, step = 10, slug = TENANT, from = 0, to = duration } = {}) {
+  let r = await callIn(slug, s.a, 'learn', 'savePosition', { courseId, lessonId, positionSec: from, durationSec: duration }).expect(200);
+  for (let pos = from + step; pos <= to + step - 0.001; pos += step) {
+    await passTime(s, lessonId, step);
+    r = await callIn(slug, s.a, 'learn', 'savePosition', { courseId, lessonId, positionSec: Math.min(pos, to), durationSec: duration }).expect(200);
+  }
+  return r;
+}
+
+/** Pretend `sec` seconds of real time passed since the learner's last position report for this lesson. */
+export async function passTime(s, lessonId, sec) {
+  await pool.query(
+    `UPDATE lesson_progress lp SET last_report_at = last_report_at - make_interval(secs => $3)
+       FROM enrollments e WHERE lp.enrollment_id = e.id AND e.user_id = $1 AND lp.lesson_id = $2`, [s.id, lessonId, sec]);
+}
+
 /** Password + emailed 2FA code (AD-07). */
 export async function loginPrivileged(email, password, slug = TENANT) {
   const a = agent();

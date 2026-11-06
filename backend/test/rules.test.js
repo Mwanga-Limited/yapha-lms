@@ -3,7 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import {
   ROOT, agent, auditCount, call, codeFromMail, correctAnswers, loginPrivileged, loginRoot, makeTeacher, outbox, pool,
   publishedCourse, registerStudent, resetDb, sampleContent, submittedCourse, tokenFromMail, wrongAnswers,
-  api,
+  api, passTime, watchVideo,
 } from './helpers.js';
 
 let root;
@@ -312,6 +312,92 @@ describe('Quiz attempts (QZ-01, QZ-02)', () => {
   });
 });
 
+describe('Video lessons complete only when watched', () => {
+  let teacher, courseId;
+  before(async () => {
+    teacher = (await makeTeacher('Video Teacher', root)).a;
+    courseId = await publishedCourse(teacher, root, 'Video Course');
+  });
+  const enrolled = async (name) => {
+    const s = await registerStudent(name);
+    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    return s;
+  };
+  const lessonWatch = async (s) => (await call(s.a, 'learn', 'lesson', { courseId, lessonId: 'l2' }).expect(200)).body;
+
+  test('a video lesson cannot be marked complete by hand; text lessons still can', async () => {
+    const s = await enrolled('Video Vic');
+    const r = await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l2' }).expect(409);
+    assert.equal(r.body.code, 'WATCH_VIDEO');
+    assert.equal((await lessonWatch(s)).completed, false);
+    await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l1' }).expect(200);
+  });
+
+  test('skipping ahead to the end does not count as watching', async () => {
+    const s = await enrolled('Skipper Sam');
+    await call(s.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 0, durationSec: 60 }).expect(200);
+    await passTime(s, 'l2', 2);   // two real seconds later the player is already at the end
+    const r = await call(s.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 60, durationSec: 60 }).expect(200);
+    assert.equal(r.body.completed, false);
+    assert.equal(r.body.watch.watchedSec, 0);
+    await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l2' }).expect(409);
+  });
+
+  test('watching part of the video shows progress but does not complete it', async () => {
+    const s = await enrolled('Halfway Hal');
+    const r = await watchVideo(s, courseId, 'l2', { duration: 60, to: 30 });
+    assert.equal(r.body.completed, false);
+    assert.equal(r.body.watch.percent, 50);
+    assert.equal(r.body.watch.requiredPercent, 90);
+    const l = await lessonWatch(s);
+    assert.equal(l.watch.percent, 50);
+    assert.equal(l.positionSec, 30, 'the resume position is kept');
+  });
+
+  test('watching to the end completes the lesson by itself and updates progress', async () => {
+    const s = await enrolled('Watcher Wanda');
+    await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l1' }).expect(200);
+    const r = await watchVideo(s, courseId, 'l2', { duration: 60 });
+    assert.equal(r.body.completed, true);
+    assert.equal(r.body.progress.percent, 67, 'two of the three required items are done');
+    assert.equal(r.body.certificate, null, 'the quiz is still required');
+    assert.equal((await lessonWatch(s)).completed, true);
+    // Once watched, completing again is harmless and later reports change nothing.
+    await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l2' }).expect(200);
+    const again = await call(s.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 5, durationSec: 60 }).expect(200);
+    assert.equal(again.body.completed, true);
+  });
+
+  test('90% is enough (the last seconds can be skipped)', async () => {
+    const s = await enrolled('Ninety Nia');
+    const r = await watchVideo(s, courseId, 'l2', { duration: 100, to: 90 });
+    assert.equal(r.body.completed, true);
+  });
+
+  test('rewinding and replaying faster than 2x speed do not inflate the watched time', async () => {
+    const s = await enrolled('Rewind Rex');
+    await watchVideo(s, courseId, 'l2', { duration: 60, to: 40 });
+    // Jump back to 10 s: nothing is added.
+    await passTime(s, 'l2', 5);
+    let r = await call(s.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 10, durationSec: 60 }).expect(200);
+    assert.equal(r.body.watch.watchedSec, 40);
+    // 30 s of video in 10 s of real time (3x) is not counted.
+    await passTime(s, 'l2', 10);
+    r = await call(s.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 40, durationSec: 60 }).expect(200);
+    assert.equal(r.body.watch.watchedSec, 40);
+    assert.equal(r.body.completed, false);
+  });
+
+  test('the watched time never exceeds the video length, and only enrolled students report it', async () => {
+    const s = await enrolled('Loop Lola');
+    const r = await watchVideo(s, courseId, 'l2', { duration: 20, step: 10, to: 20 });
+    assert.equal(r.body.watch.watchedSec, 20);
+    await call(teacher, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 1 }).expect(403);
+    const outsider = await registerStudent('Outsider Olu');
+    await call(outsider.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 1 }).expect(403);
+  });
+});
+
 describe('Certificates (CC-01 … CC-03)', () => {
   let teacher, courseId;
   before(async () => {
@@ -326,7 +412,8 @@ describe('Certificates (CC-01 … CC-03)', () => {
     assert.equal(r.body.certificate, null);
     r = await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: correctAnswers }).expect(200);
     assert.equal(r.body.certificate, null, 'l2 is still required');
-    r = await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l2' }).expect(200);
+    r = await watchVideo(s, courseId, 'l2');   // the video completes itself once watched
+    assert.equal(r.body.completed, true);
     const code = r.body.certificate.code;
     assert.match(code, /^EL-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
     await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l2' }).expect(200);
@@ -345,7 +432,7 @@ describe('Certificates (CC-01 … CC-03)', () => {
     const s = await registerStudent('Revoked Rita');
     await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
     await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l1' });
-    await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l2' });
+    await watchVideo(s, courseId, 'l2');
     const r = await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: correctAnswers });
     const code = r.body.certificate.code;
     const certs = (await call(root, 'admin', 'certificates', { q: code })).body.certificates;

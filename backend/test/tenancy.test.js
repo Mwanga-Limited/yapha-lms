@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import {
   OTHER_TENANT, ROOT, SUPER, TENANT, agent, api, auditCount, call, callIn, codeFromMail, correctAnswers, loginPrivileged,
-  config, loginRoot, loginSuper, makeTeacher, outbox, pool, publishedCourse, registerStudent, resetDb, tenantId, tokenFromMail,
+  config, loginRoot, loginSuper, makeTeacher, outbox, pool, watchVideo, publishedCourse, registerStudent, resetDb, tenantId, tokenFromMail,
 } from './helpers.js';
 
 const A = TENANT;        // "alpha"
@@ -90,7 +90,7 @@ describe('Isolation between organisations', () => {
     const s = await registerStudent('Alpha Graduate', { slug: A });
     await callIn(A, s.a, 'learn', 'enrol', { courseId: courseA }).expect(200);
     await callIn(A, s.a, 'learn', 'completeLesson', { courseId: courseA, lessonId: 'l1' });
-    await callIn(A, s.a, 'learn', 'completeLesson', { courseId: courseA, lessonId: 'l2' });
+    await watchVideo(s, courseA, 'l2', { slug: A });
     const r = await callIn(A, s.a, 'learn', 'submitQuiz', { courseId: courseA, quizId: 'q1', answers: correctAnswers }).expect(200);
     const code = r.body.certificate.code;
     const v = await agent().get(`${api('certificates', A)}/${code}`).expect(200);

@@ -38,6 +38,31 @@ async function touch(db, enrollmentId, itemId) {
   await db.query(`UPDATE enrollments SET last_item_id = $2, last_accessed_at = now() WHERE id = $1`, [enrollmentId, itemId]);
 }
 
+/** Video watching rules. */
+export const WATCH = {
+  share: 0.9,      // a video completes once 90% of its length has been watched
+  maxSpeed: 2,     // playback up to 2x speed counts
+  slackSec: 3,     // allowance for timing between reports
+};
+const watchedEnough = (p) => !!p && p.duration_sec > 0 && p.watched_sec >= p.duration_sec * WATCH.share;
+const watchView = (p) => ({
+  watchedSec: Math.round((p?.watched_sec ?? 0) * 10) / 10,
+  durationSec: Math.round((p?.duration_sec ?? 0) * 10) / 10,
+  percent: p?.duration_sec > 0 ? Math.min(100, Math.round((p.watched_sec / p.duration_sec) * 100)) : 0,
+  requiredPercent: Math.round(WATCH.share * 100),
+});
+
+async function markLessonComplete(db, ctx, course, enrollment, lesson) {
+  await db.query(
+    `INSERT INTO lesson_progress (enrollment_id, lesson_id, completed_at) VALUES ($1,$2, now())
+     ON CONFLICT (enrollment_id, lesson_id) DO UPDATE SET completed_at = coalesce(lesson_progress.completed_at, now()), updated_at = now()`,
+    [enrollment.id, lesson.id]);
+  await touch(db, enrollment.id, lesson.id);
+  const certificate = await checkCompletion(db, ctx, enrollment, course);
+  const st = await learnerState(db, enrollment.id);
+  return { progress: computeProgress(course.live_content, st.completed, st.passed), certificate: certificate ? { code: certificate.code } : null };
+}
+
 export const learnRoutes = actionEndpoint({
   /** EN-01 (one active enrolment) + EN-03 (verified email). Payment is Phase 2. */
   enrol: {
@@ -100,24 +125,57 @@ export const learnRoutes = actionEndpoint({
       const lesson = findItem(course.live_content, ctx.data.lessonId, 'lesson');
       if (!lesson) notFound('Lesson');
       await touch(db, enrollment.id, lesson.id);
-      const { rows: [p] } = await query(`SELECT completed_at, position_sec FROM lesson_progress WHERE enrollment_id = $1 AND lesson_id = $2`, [enrollment.id, lesson.id]);
-      return { lesson: lessonPayload(lesson), completed: !!p?.completed_at, positionSec: p?.position_sec ?? 0 };
+      const { rows: [p] } = await query(
+        `SELECT completed_at, position_sec, watched_sec, duration_sec FROM lesson_progress WHERE enrollment_id = $1 AND lesson_id = $2`, [enrollment.id, lesson.id]);
+      return {
+        lesson: lessonPayload(lesson), completed: !!p?.completed_at, positionSec: p?.position_sec ?? 0,
+        watch: lesson.type === 'video' ? watchView(p) : null,
+      };
     },
   },
 
+  /**
+   * The player reports where the learner is in a lesson (every few seconds while a video plays, and on pause and end).
+   * For videos it also reports the length. A stretch counts as watched only if the real time since the last report
+   * could cover it, so skipping ahead doesn't count. When enough of a video is watched, the lesson completes itself.
+   */
   savePosition: {
     auth: ['student'],   // learning and certificates are for Student accounts only
-    schema: z.object({ courseId: id, lessonId: itemRef, positionSec: z.number().min(0).max(1e7) }),
-    run: async (ctx) => {
-      const db = { query };
-      const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId);
-      if (!findItem(course.live_content, ctx.data.lessonId, 'lesson')) notFound('Lesson');
-      await query(
-        `INSERT INTO lesson_progress (enrollment_id, lesson_id, position_sec) VALUES ($1,$2,$3)
-         ON CONFLICT (enrollment_id, lesson_id) DO UPDATE SET position_sec = EXCLUDED.position_sec, updated_at = now()`,
-        [enrollment.id, ctx.data.lessonId, ctx.data.positionSec]);
-      return { ok: true };
-    },
+    schema: z.object({
+      courseId: id, lessonId: itemRef, positionSec: z.number().min(0).max(1e7),
+      durationSec: z.number().min(0).max(1e7).optional(),
+    }),
+    run: async (ctx) => tx(async (db) => {
+      const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId, true);
+      const lesson = findItem(course.live_content, ctx.data.lessonId, 'lesson');
+      if (!lesson) notFound('Lesson');
+      const { rows: [prev] } = await db.query(
+        `SELECT *, extract(epoch FROM now() - last_report_at)::float8 AS elapsed FROM lesson_progress
+          WHERE enrollment_id = $1 AND lesson_id = $2 FOR UPDATE`, [enrollment.id, lesson.id]);
+      const pos = ctx.data.positionSec;
+      let watched = prev?.watched_sec ?? 0;
+      let duration = Math.max(prev?.duration_sec ?? 0, ctx.data.durationSec ?? 0);
+      if (lesson.type === 'video' && prev?.last_report_at) {
+        const delta = pos - prev.position_sec;
+        if (delta > 0 && delta <= prev.elapsed * WATCH.maxSpeed + WATCH.slackSec) watched += delta;
+      }
+      if (duration > 0) watched = Math.min(watched, duration);
+      const { rows: [row] } = await db.query(
+        `INSERT INTO lesson_progress (enrollment_id, lesson_id, position_sec, watched_sec, duration_sec, last_report_at)
+         VALUES ($1,$2,$3,$4,$5, now())
+         ON CONFLICT (enrollment_id, lesson_id) DO UPDATE SET position_sec = EXCLUDED.position_sec, watched_sec = EXCLUDED.watched_sec,
+           duration_sec = EXCLUDED.duration_sec, last_report_at = now(), updated_at = now()
+         RETURNING *`,
+        [enrollment.id, lesson.id, pos, watched, duration]);
+      if (lesson.type !== 'video') return { ok: true };
+
+      // Watched enough: the lesson completes on its own (there is no "Mark as complete" for videos).
+      if (!row.completed_at && watchedEnough(row)) {
+        const done = await markLessonComplete(db, ctx, course, enrollment, lesson);
+        return { ok: true, watch: watchView(row), completed: true, ...done };
+      }
+      return { ok: true, watch: watchView(row), completed: !!row.completed_at };
+    }),
   },
 
   completeLesson: {
@@ -127,14 +185,14 @@ export const learnRoutes = actionEndpoint({
       const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId, true);
       const lesson = findItem(course.live_content, ctx.data.lessonId, 'lesson');
       if (!lesson) notFound('Lesson');
-      await db.query(
-        `INSERT INTO lesson_progress (enrollment_id, lesson_id, completed_at) VALUES ($1,$2, now())
-         ON CONFLICT (enrollment_id, lesson_id) DO UPDATE SET completed_at = coalesce(lesson_progress.completed_at, now()), updated_at = now()`,
-        [enrollment.id, lesson.id]);
-      await touch(db, enrollment.id, lesson.id);
-      const certificate = await checkCompletion(db, ctx, enrollment, course);
-      const st = await learnerState(db, enrollment.id);
-      return { progress: computeProgress(course.live_content, st.completed, st.passed), certificate: certificate ? { code: certificate.code } : null };
+      if (lesson.type === 'video') {
+        // Videos can't be ticked off by hand: only watching them completes them.
+        const { rows: [p] } = await db.query(`SELECT * FROM lesson_progress WHERE enrollment_id = $1 AND lesson_id = $2`, [enrollment.id, lesson.id]);
+        if (!p?.completed_at && !watchedEnough(p)) {
+          fail(409, 'Watch the whole video to complete this lesson', { code: 'WATCH_VIDEO', watch: watchView(p) });
+        }
+      }
+      return markLessonComplete(db, ctx, course, enrollment, lesson);
     }),
   },
 
