@@ -4,8 +4,8 @@ There are three layers of testing. Each one proves something different:
 
 | Layer | What it proves | Time | Who |
 |---|---|---|---|
-| **1. Automated tests** (`npm test`) | Every business rule holds, against a real PostgreSQL database. Runs the same way every time. | ~5 s | Anyone, repeatable |
-| **2. Postman collection** | The HTTP API behaves as documented, end to end, across all roles, the super admin and two organisations. 122 requests and 199 checks. | ~1 min | Engineer reviewing the API |
+| **1. Automated tests** (`npm test` in `backend` and in `frontend`) | Every business rule holds, against a real PostgreSQL database; the course player and video tracking behave as designed. Runs the same way every time. | ~10 s | Anyone, repeatable |
+| **2. Postman collection** | The HTTP API behaves as documented, end to end, across all roles, the super admin and two organisations. 127 requests and 209 checks. | ~1 min | Engineer reviewing the API |
 | **3. Frontend walkthrough** | The screens work for real people on desktop and mobile. | ~30 min | Anyone, by hand |
 
 Rule IDs (AD-, CR-, EN-, QZ-, CC-) come from the work plan; they now apply inside each organisation. Isolation between organisations is tested separately (section 1 and Postman folder 10). The [coverage matrix](#4-rule-coverage-matrix) at the end shows where each rule is tested.
@@ -34,15 +34,31 @@ For safety, the tests refuse to run if this points at the main database, or if t
 
 ## 1. Automated tests
 
+**Backend** (needs the test database, see section 0):
+
 ```powershell
 cd backend
-npm test               # 43 tests, expect: pass 43, fail 0
+npm test               # 50 tests, expect: pass 50, fail 0
 npm run test:coverage  # same tests plus a coverage table (about 92% of lines)
 ```
 
-What runs:
+**Frontend** (no database or server needed):
 
-- `test/rules.test.js` covers authentication, rate limiting, password reset, 2FA, role checks, every AD/CR/EN/QZ/CC rule, the audit log and notifications.
+```powershell
+cd frontend
+npm test               # 21 tests, expect: Tests 21 passed
+```
+
+What runs in the backend:
+
+- `test/rules.test.js` covers authentication, rate limiting, password reset, 2FA, role checks, every AD/CR/EN/QZ/CC rule, the audit log and notifications, and **video lessons** ("Video lessons complete only when watched"):
+  - a video can't be marked complete by hand (409 `WATCH_VIDEO`); text lessons still can
+  - skipping ahead to the end doesn't count as watching
+  - watching part of a video shows progress (e.g. 50%) but doesn't complete it, and the resume position is kept
+  - watching to the end completes the lesson by itself and updates course progress
+  - 90% is enough; the last seconds can be skipped
+  - rewinding, and playing faster than 2x, don't add watched time
+  - watched time never exceeds the video's length; only enrolled students can report it
 - `test/files-totp.test.js` covers authenticator-app sign-in, uploads, signed private-file links, and teachers referencing files they don't own.
 - `test/tenancy.test.js` covers multitenancy:
   - **Member IDs.** Unique organisation and member IDs, which never change.
@@ -61,7 +77,13 @@ The tests use real HTTP requests (supertest) against the real Express app and a 
 - a duplicate enrolment
 - deleting a course that has enrolments
 
-Emails are captured in memory, so the tests read verification links and 2FA codes from them, just as a user would.
+Emails are captured in memory, so the tests read verification links and 2FA codes from them, just as a user would. For videos, the `watchVideo` helper sends position reports the way the player does, and moves the previous report's time back instead of really waiting.
+
+What runs in the frontend (Vitest + React Testing Library, in `frontend/src/__tests__/`):
+
+- `watch.test.ts`: when the player reports its position (every 5 s of playback, and on play, pause and end); the "62% watched" label; YouTube and Vimeo links become embeds that report playback; playback messages from YouTube and Vimeo are read correctly and messages from any other site are ignored.
+- `LessonView.test.tsx`: a video lesson reports its position and length on play, every 5 s while playing, on pause, and its full length when it ends; a YouTube embed passes its playback on (and ignores look-alike messages from other sites); text and file lessons render.
+- `Player.test.tsx`: video lessons have **no "Mark as complete" button** and show how much is watched; playing reports to the server and the watched share updates; when the server says the video is watched, the lesson shows "✓ Completed" with a "Next" button, without the player ever calling `completeLesson`; text lessons still have "Mark as complete".
 
 ---
 
@@ -114,7 +136,7 @@ npx newman run postman/E-Learning.postman_collection.json \
   --env-var superadminTotpSecret=SUPER_KEY --env-var adminTotpSecret=ADMIN_KEY --env-var teacherTotpSecret=TEACHER_KEY
 ```
 
-Expected summary: `requests 122 / 0 failed`, `assertions 199 / 0 failed`.
+Expected summary: `requests 127 / 0 failed`, `assertions 209 / 0 failed`. Folder 08 waits about 6 seconds while it "watches" the video.
 
 The collection is safe to run repeatedly. Each run creates its own new organisation (then suspends it), student and course (then archives it).
 
@@ -159,7 +181,12 @@ Use **http://localhost:5173/acme** for sections A–D. Demo accounts there: `adm
 | A5 | Open the verification link from the API terminal | "Your email is verified". The banner disappears. |
 | A6 | Enrol | The course player opens. Lessons on the left, highlighter progress bar at the top. |
 | A7 | Play the video, pause at ~5 s, go back to **My learning**, then **Resume course** | Resumes at the same lesson and the same video position |
-| A8 | **Mark as complete** on lessons | Tick in the sidebar, progress bar moves, jumps to the next item |
+| A8 | **Mark as complete** on a **reading or file** lesson | Tick in the sidebar, progress bar moves, jumps to the next item |
+| A8a | Open a **video** lesson | No "Mark as complete" button. Under the video: a bar and "0% watched · watch at least 90% to complete this lesson". |
+| A8b | Play the video for a while, then pause | The bar and percentage go up as it plays. The lesson is not complete yet. |
+| A8c | Drag the video's slider to the very end | Not completed: the percentage barely moves, because skipping ahead doesn't count. |
+| A8d | Go back and watch the video through to the end | "✓ Completed" appears with a **Next: …** button, the sidebar ticks the lesson, and the course progress bar moves. No button was needed. |
+| A8e | Leave the video half-watched, open another lesson, come back | The percentage is kept; the video resumes where you stopped. |
 | A9 | Take the quiz with wrong answers 3 times | Each result shows a score, which questions were wrong, and attempts left. After the 3rd: "locked", with a countdown (QZ-02). |
 | A10 | (Admin or Teacher resets attempts, see C6 or D9) Retake the quiz and pass | "Passed" |
 | A11 | Finish every required item | Green banner with the certificate code, **Download PDF**, verification page |
