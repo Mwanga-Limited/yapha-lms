@@ -3,7 +3,7 @@ import { Empty, Loading, fmtDate, fmtDateTime, useAction, useLoad } from '../ui'
 
 interface LearnerRow {
   enrollmentId: string; name: string; email: string; status: string; enrolledAt: string; completedAt: string | null; progress: number;
-  quizzes: { quizId: string; title: string; attemptsUsed: number; maxAttempts: number; passed: boolean; bestScore: number | null; lockedUntil: string | null }[];
+  quizzes: { quizId: string; title: string; attemptsUsed: number; maxAttempts: number; passed: boolean; score: number | null; lockedUntil: string | null }[];
 }
 
 /** Learners of a course with quiz attempt status; Teacher of the course or Admin can reset attempts (QZ-02). */
@@ -27,7 +27,7 @@ export function Learners({ courseId }: { courseId: string }) {
                   {l.quizzes.map((q) => (
                     <li key={q.quizId}>
                       <span>{q.title}: </span>
-                      {q.passed ? <span className="ok-text">passed ({q.bestScore}%)</span>
+                      {q.passed ? <span className="ok-text">passed ({q.score}%)</span>
                         : q.lockedUntil ? <span className="warn-text">locked until {fmtDateTime(q.lockedUntil)}</span>
                         : <span className="muted">{q.attemptsUsed} of {q.maxAttempts} attempts used</span>}
                       {!q.passed && (q.attemptsUsed > 0 || q.lockedUntil) && (

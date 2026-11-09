@@ -376,7 +376,7 @@ export const courseRoutes = actionEndpoint({
           quizzes: quizzes.map((q) => {
             const s = st.quizStates[q.id];
             const locked = s?.locked_until && new Date(s.locked_until) > new Date();
-            return { quizId: q.id, title: q.title, attemptsUsed: s?.attempts_used ?? 0, maxAttempts: quizRules().maxAttempts, passed: !!s?.passed_at, bestScore: s?.best_score ?? null, lockedUntil: locked ? s.locked_until : null };
+            return { quizId: q.id, title: q.title, attemptsUsed: s?.attempts_used ?? 0, maxAttempts: quizRules().maxAttempts, passed: !!s?.passed_at, score: s?.last_score ?? null, lockedUntil: locked ? s.locked_until : null };
           }),
         });
       }

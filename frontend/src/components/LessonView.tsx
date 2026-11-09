@@ -8,21 +8,48 @@ import { embedUrl, listenMessages, parseEmbedMessage, shouldReport } from '../wa
  * pause and end. The server works out how much has really been watched and completes the lesson itself.
  */
 export function LessonView({ lesson, startAt = 0, onPosition }: {
-  lesson: LessonPayload; startAt?: number; onPosition?: (sec: number, durationSec?: number) => void;
+  lesson: LessonPayload; startAt?: number;
+  /** leaving: the learner is leaving the lesson or the page, so the report must get through even if the page closes */
+  onPosition?: (sec: number, durationSec?: number, leaving?: boolean) => void;
 }) {
   const video = useRef<HTMLVideoElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const lastSaved = useRef<number | null>(null);
+  const latest = useRef<{ sec: number; duration?: number } | null>(null);   // where playback is now, reported or not
+  const onPositionRef = useRef(onPosition);
+  onPositionRef.current = onPosition;
 
-  useEffect(() => { lastSaved.current = null; }, [lesson.id]);
+  // Nothing watched is lost: when the learner moves to another lesson, switches tab or closes the page,
+  // the last few seconds since the previous report are sent too.
+  useEffect(() => {
+    lastSaved.current = null;
+    latest.current = null;
+    const report = onPosition;   // this lesson's reporter, even after the player has moved on to the next lesson
+    const flush = () => {
+      const l = latest.current;
+      if (!report || !l || l.sec === lastSaved.current) return;
+      lastSaved.current = l.sec;
+      report(l.sec, l.duration, true);
+    };
+    const onHide = () => { if (document.visibilityState === 'hidden') flush(); };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, [lesson.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const src = lesson.type === 'video' ? lesson.fileUrl || lesson.videoUrl : null;
   const embed = src && !lesson.fileUrl ? embedUrl(src, startAt, window.location.origin) : null;
 
   const report = (sec: number, duration: number | undefined, force = false) => {
-    if (!onPosition || !shouldReport(lastSaved.current, sec, force)) return;
+    const d = duration && Number.isFinite(duration) ? duration : undefined;
+    latest.current = { sec, duration: d };
+    if (!onPositionRef.current || !shouldReport(lastSaved.current, sec, force)) return;
     lastSaved.current = sec;
-    onPosition(sec, duration && Number.isFinite(duration) ? duration : undefined);
+    onPositionRef.current(sec, d);
   };
   const fromVideo = (force = false, atEnd = false) => {
     const v = video.current;

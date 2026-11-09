@@ -65,6 +65,43 @@ describe('a video lesson reports what is watched', () => {
   });
 });
 
+describe('nothing watched is lost when the learner leaves', () => {
+  test('leaving the lesson mid-video sends the seconds watched since the last report', () => {
+    const onPosition = vi.fn();
+    const { container, unmount } = render(<LessonView lesson={videoLesson()} onPosition={onPosition} />);
+    const video = container.querySelector('video')!;
+    at(video, 0); fireEvent.play(video);
+    at(video, 3); fireEvent.timeUpdate(video);   // under 5 s: not reported yet
+    expect(onPosition).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(onPosition).toHaveBeenLastCalledWith(3, 60, true);
+  });
+
+  test('switching tab or closing the page sends it too', () => {
+    const onPosition = vi.fn();
+    const { container } = render(<LessonView lesson={videoLesson()} onPosition={onPosition} />);
+    const video = container.querySelector('video')!;
+    at(video, 0); fireEvent.play(video);
+    at(video, 4); fireEvent.timeUpdate(video);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(onPosition).toHaveBeenLastCalledWith(4, 60, true);
+    at(video, 4.5); fireEvent.timeUpdate(video);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(onPosition).toHaveBeenLastCalledWith(4.5, 60, true);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+  });
+
+  test('nothing extra is sent when the last position was already reported', () => {
+    const onPosition = vi.fn();
+    const { container, unmount } = render(<LessonView lesson={videoLesson()} onPosition={onPosition} />);
+    const video = container.querySelector('video')!;
+    at(video, 20); fireEvent.pause(video);
+    unmount();
+    expect(onPosition).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('other lessons', () => {
   test('a text lesson shows its text and no video', () => {
     const { container } = render(<LessonView lesson={{ id: 'l1', title: 'Welcome', type: 'text', body: 'Hello and welcome.\n\nSecond paragraph.', videoUrl: null, fileUrl: null, fileName: null, durationMin: 3 }} />);

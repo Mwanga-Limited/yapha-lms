@@ -42,20 +42,19 @@ export function Player() {
   const go = (it?: OutlineItem) => { if (it) { setParams({ item: it.id }); window.scrollTo({ top: 0 }); } };
 
   // Videos: report the position; the server counts what was really watched and completes the lesson itself.
-  const savePosition = useCallback((sec: number, durationSec?: number) => {
-    if (!current) return;
-    const lessonId = current.id;
+  // lessonId is passed in, so a report sent while leaving a lesson is saved against that lesson, not the next one.
+  const savePosition = useCallback((lessonId: string, sec: number, durationSec?: number, leaving = false) => {
     void api<{ watch?: WatchState; completed?: boolean; progress?: Progress; certificate?: { code: string } | null }>('learn', 'savePosition', {
       courseId, lessonId, positionSec: Math.round(sec * 10) / 10,
       ...(durationSec ? { durationSec: Math.round(durationSec * 10) / 10 } : {}),
-    }).then((r) => {
+    }, { keepalive: leaving }).then((r) => {
       if (r.watch) setLesson((l) => (l && l.lesson.id === lessonId ? { ...l, watch: r.watch!, completed: l.completed || !!r.completed } : l));
       if (r.progress) {
         applyProgress(r.progress, lessonId, { done: true }, r.certificate);
         if (!r.certificate) toast('Video watched. Lesson complete.');
       }
     }).catch(() => {});
-  }, [courseId, current]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [courseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyProgress = (progress: Progress, doneId: string, patch?: Partial<OutlineItem>, certificate?: { code: string } | null) => {
     setData((d) => d && ({
@@ -148,7 +147,7 @@ export function Player() {
               </div>
               {current.kind === 'lesson' && (lesson && lesson.lesson.id === current.id ? (
                 <>
-                  <LessonView lesson={lesson.lesson} startAt={lesson.positionSec} onPosition={savePosition} />
+                  <LessonView lesson={lesson.lesson} startAt={lesson.positionSec} onPosition={(sec, d, leaving) => savePosition(lesson.lesson.id, sec, d, leaving)} />
                   <div className="lesson-actions">
                     {current.done ? (
                       <>

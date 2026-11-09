@@ -53,7 +53,7 @@ export interface CourseMeta {
 
 export interface QuizState {
   attemptsUsed: number; attemptsLeft: number; maxAttempts: number; passMark: number;
-  lockedUntil: string | null; passed: boolean; bestScore: number | null;
+  lockedUntil: string | null; passed: boolean; score: number | null;
 }
 
 export interface OutlineItem {
@@ -105,11 +105,12 @@ async function request<T>(url: string, init: RequestInit): Promise<T> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function api<T = any>(endpoint: Endpoint, action: string, data: unknown = {}): Promise<T> {
+export function api<T = any>(endpoint: Endpoint, action: string, data: unknown = {}, opts: { keepalive?: boolean } = {}): Promise<T> {
   return request<T>(apiUrl(`/${endpoint}`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, data }),
+    ...(opts.keepalive ? { keepalive: true } : {}),   // still sent if the learner closes the tab
   });
 }
 

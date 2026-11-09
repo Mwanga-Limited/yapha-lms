@@ -61,8 +61,9 @@ describe('video lessons in the course player', () => {
     Object.defineProperty(video, 'duration', { configurable: true, value: 60 });
     savePositionReply = { ok: true, watch: { watchedSec: 33, durationSec: 60, percent: 55, requiredPercent: 90 }, completed: false };
     await act(async () => { fireEvent.play(video); });
-    expect(api).toHaveBeenCalledWith('learn', 'savePosition', { courseId: 'c1', lessonId: 'l2', positionSec: 0, durationSec: 60 });
-    expect(await screen.findByText('55% watched · watch at least 90% to complete this lesson')).toBeInTheDocument();
+    expect(api).toHaveBeenCalledWith('learn', 'savePosition', { courseId: 'c1', lessonId: 'l2', positionSec: 0, durationSec: 60 }, { keepalive: false });
+    expect(await screen.findByText('55% watched')).toBeInTheDocument();
+    expect(screen.queryByText(/90%/)).toBeNull();
   });
 
   test('when the server says the video is watched, the lesson shows as completed with a way on', async () => {
@@ -77,6 +78,23 @@ describe('video lessons in the course player', () => {
     expect(await screen.findByText('✓ Completed')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next: Check-in' })).toBeInTheDocument();
     expect(api).not.toHaveBeenCalledWith('learn', 'completeLesson', expect.anything());
+  });
+});
+
+describe('no watching is lost when the learner moves on', () => {
+  test('going to the next lesson mid-video saves the last seconds against the video, not the next lesson', async () => {
+    const { container } = open('l2');
+    await screen.findByTestId('watch-progress');
+    const video = container.querySelector('video')!;
+    Object.defineProperty(video, 'duration', { configurable: true, value: 60 });
+    Object.defineProperty(video, 'currentTime', { configurable: true, writable: true, value: 0 });
+    await act(async () => { fireEvent.play(video); });
+    video.currentTime = 13; await act(async () => { fireEvent.timeUpdate(video); });   // reported (5 s rule)
+    video.currentTime = 16; await act(async () => { fireEvent.timeUpdate(video); });   // not yet reported
+    api.mockClear();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Check-in/ })); });
+    expect(api).toHaveBeenCalledWith('learn', 'savePosition', { courseId: 'c1', lessonId: 'l2', positionSec: 16, durationSec: 60 }, { keepalive: true });
+    expect(api).not.toHaveBeenCalledWith('learn', 'savePosition', expect.objectContaining({ lessonId: 'q1' }), expect.anything());
   });
 });
 

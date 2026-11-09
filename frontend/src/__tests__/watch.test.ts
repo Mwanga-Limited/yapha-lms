@@ -17,9 +17,9 @@ describe('the watched label under a video', () => {
   test('before the length is known', () => {
     expect(watchLabel(null)).toBe('Watch the video to complete this lesson');
   });
-  test('shows how much is watched and how much is needed', () => {
+    test('shows how much is watched, without the share needed to complete', () => {
     expect(watchLabel({ watchedSec: 31, durationSec: 50, percent: 62, requiredPercent: 90 }))
-      .toBe('62% watched · watch at least 90% to complete this lesson');
+      .toBe('62% watched');
   });
 });
 
