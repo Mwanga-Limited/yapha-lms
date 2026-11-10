@@ -5,6 +5,8 @@ import { currentScope, withScope } from '../db.js';
  * Per-organisation configuration. Same business rules for everyone; these values are what each
  * organisation may change. Defaults reproduce the original Phase 1 rules (70% pass mark, 3 attempts, 24h lock).
  */
+/** Currencies Paystack accepts. */
+export const CURRENCIES = ['NGN', 'GHS', 'ZAR', 'KES', 'USD'];
 const hex = z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, 'Use a colour like #F2CC3D');
 const domain = z.string().trim().toLowerCase().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, 'Enter a domain like acme.com');
 
@@ -29,6 +31,9 @@ export const settingsSchema = z.object({
     google: z.boolean().default(true),                           // Google sign-in (needs GOOGLE_CLIENT_ID on the server)
     studentMfa: z.boolean().default(false),                      // require two-step sign-in for students too
   }).prefault({}),
+  payments: z.object({
+    currency: z.enum(CURRENCIES).default('NGN'),                 // course prices are in this currency (Paystack)
+  }).prefault({}),
 });
 
 export const defaultSettings = () => settingsSchema.parse({});
@@ -39,7 +44,7 @@ export const tenantName = (tenant) => settingsOf(tenant).branding.displayName ||
 export const currentTenant = () => currentScope()?.tenant ?? null;
 
 /** API path prefix for the current organisation, used to build file and certificate URLs. */
-export const apiBase = (tenant = currentTenant()) => (tenant ? `/api/t/${tenant.slug}` : '/api/platform');
+export const apiBase = (tenant = currentTenant()) => (tenant ? `/api/${tenant.slug}` : '/api/platform');
 
 /** Settings that the organisation's public pages need (no secrets). */
 export function publicTenant(tenant) {
@@ -50,6 +55,7 @@ export function publicTenant(tenant) {
     quiz: s.quiz,
     access: { signup: s.access.signup, allowedDomains: s.access.allowedDomains },
     auth: s.auth,
+    payments: { currency: s.payments.currency },
   };
 }
 

@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ApiError, api, upload, type Content, type CourseMeta, type VersionStatus } from '../../api';
-import { Thumb } from '../../components/CourseCard';
+import { ApiError, api, type Content, type CourseMeta, type VersionStatus } from '../../api';
 import { ContentPreview } from '../../components/ContentPreview';
 import { Learners } from '../../components/Learners';
 import { Alert, Button, ErrorState, Field, Loading, Select, StatusBadge, Tabs, TextArea, fmtDateTime, useAction, useDocumentTitle, useLoad } from '../../ui';
 import { ContentBuilder } from './ContentBuilder';
+import { formatMoney, fromMinor } from '../../money';
 
 export interface CourseGet {
   course: CourseMeta;
@@ -22,20 +22,19 @@ type Tab = 'details' | 'content' | 'review' | 'learners';
 
 function DetailsForm({ g, onSaved }: { g: CourseGet; onSaved: () => void }) {
   const c = g.course;
-  const [f, setF] = useState({ title: c.title, summary: c.summary, description: c.description, outline: c.outline, category: c.category, level: c.level, language: c.language });
-  const [thumb, setThumb] = useState<{ id: string | null; url: string | null }>({ id: c.thumbnailFileId, url: c.thumbnailUrl });
+  const [f, setF] = useState({ title: c.title, summary: c.summary, description: c.description, outline: c.outline, category: c.category, level: c.level, language: c.language,
+    suggestedPrice: String(fromMinor(c.suggestedPrice ?? 0)) });
   const { busy, run } = useAction();
-  const up = useAction();
   const locked = c.status === 'in_review' || c.status === 'archived';
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
 
   const save = (e: FormEvent) => {
     e.preventDefault();
-    void run(async () => { await api('courses', 'updateMeta', { id: c.id, ...f, thumbnailFileId: thumb.id }); onSaved(); }, g.live ? 'Saved. The changes are live.' : 'Details saved');
+    void run(async () => { await api('courses', 'updateMeta', { id: c.id, ...f, suggestedPrice: Number(f.suggestedPrice) || 0 }); onSaved(); }, g.live ? 'Saved. The changes are live.' : 'Details saved');
   };
   return (
     <form onSubmit={save} className="panel">
-      {g.live && <Alert tone="info">This course has an approved version. Edits to these details (typos, descriptions, thumbnail) go live straight away. Lessons, quizzes and the completion rule go through review.</Alert>}
+      {g.live && <Alert tone="info">This course has an approved version. Edits to these details (typos, descriptions) go live straight away. Lessons, quizzes and the completion rule go through review.</Alert>}
       {c.status === 'in_review' && <Alert tone="info">The course is being reviewed. You can edit it again after the decision.</Alert>}
       <fieldset disabled={locked} className="plain">
         <Field label="Title" value={f.title} onChange={set('title')} required maxLength={200} />
@@ -48,20 +47,17 @@ function DetailsForm({ g, onSaved }: { g: CourseGet; onSaved: () => void }) {
           </Select>
           <Field label="Language" value={f.language} onChange={set('language')} />
         </div>
-        <TextArea label="Outline: what learners will learn" rows={5} value={f.outline} onChange={set('outline')} hint="One point per line. Required before you submit." />
-        <TextArea label="Description" rows={6} value={f.description} onChange={set('description')} />
-        <div className="field">
-          <span className="label-like">Thumbnail</span>
-          <div className="thumb-edit">
-            <Thumb url={thumb.url} title={f.title || 'Course'} />
-            <div className="row-gap">
-              <label className="btn btn-secondary btn-sm">{up.busy ? 'Uploading…' : 'Upload image'}
-                <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) void up.run(async () => { const r = await upload(file, 'thumbnail'); setThumb({ id: r.id, url: r.url }); }); }} />
-              </label>
-              {thumb.id && <button type="button" className="link-btn" onClick={() => setThumb({ id: null, url: null })}>Remove</button>}
-            </div>
+        <div className="grid-3">
+          <Field label={`Suggested price (${c.currency})`} type="number" min={1} max={10000000} step="0.01" inputMode="decimal" value={f.suggestedPrice} onChange={set('suggestedPrice')}
+            hint="What you think learners should pay. Every course is paid: required before you submit. An Admin sets the final price." />
+          <div className="field">
+            <label>Price learners pay</label>
+            <p className="field-value" data-testid="admin-price"><strong>{c.price > 0 ? formatMoney(c.price, c.currency) : 'Not set yet'}</strong>
+              <small className="hint">{g.live ? 'Set by an Admin.' : 'Set by an Admin when the course is approved.'}</small></p>
           </div>
         </div>
+        <TextArea label="Outline: what learners will learn" rows={5} value={f.outline} onChange={set('outline')} hint="One point per line. Required before you submit." />
+        <TextArea label="Description" rows={6} value={f.description} onChange={set('description')} />
         <Button type="submit" busy={busy}>Save details</Button>
       </fieldset>
     </form>

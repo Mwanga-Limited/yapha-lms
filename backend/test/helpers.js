@@ -24,9 +24,22 @@ const { createApp } = await import('../src/app.js');
 const { pool } = await import('../src/db.js');
 const { migrate } = await import('../src/scripts/migrate.js');
 const { outbox } = await import('../src/lib/mailer.js');
+const { encryptSecret } = await import('../src/lib/secrets.js');
+const { startPaystackTestServer } = await import('./paystack-test-server.js');
 
 export { pool, outbox };
 export const { config } = await import('../src/config.js');
+
+// Every course is paid, so every test file talks to the Paystack test server (no internet, no real money).
+// Each test organisation starts with its own Paystack test keys connected.
+export const PAYSTACK_KEYS = {
+  alpha: { publicKey: 'pk_test_' + 'a'.repeat(40), secretKey: 'sk_test_' + 'b'.repeat(40) },
+  beta: { publicKey: 'pk_test_' + 'c'.repeat(40), secretKey: 'sk_test_' + 'd'.repeat(40) },
+};
+export const paystackTestServer = await startPaystackTestServer();
+for (const k of Object.values(PAYSTACK_KEYS)) paystackTestServer.acceptKey(k.secretKey);
+config.paystackApiUrl = paystackTestServer.url;
+paystackTestServer.unref();
 export const app = createApp();
 export const ROOT = { email: 'root@test.dev', password: 'RootPassword123' };
 
@@ -42,6 +55,9 @@ export async function resetDb() {
     const { rows: [t] } = await pool.query(`INSERT INTO tenants (slug, name) VALUES ($1, $2) RETURNING id`, [slug, `${slug} org`]);
     await pool.query(`INSERT INTO users (tenant_id, email, password_hash, name, role, is_root, email_verified_at) VALUES ($1,$2,$3,'Root Admin','admin',true, now())`,
       [t.id, ROOT.email, hash]);
+    const k = PAYSTACK_KEYS[slug];
+    await pool.query(`INSERT INTO payment_accounts (tenant_id, public_key, secret_key_enc, secret_last4, live_mode) VALUES ($1,$2,$3,$4,false)`,
+      [t.id, k.publicKey, encryptSecret(k.secretKey), k.secretKey.slice(-4)]);
   }
   await pool.query(`INSERT INTO users (tenant_id, email, password_hash, name, role, email_verified_at) VALUES (NULL,$1,$2,'Platform Owner','superadmin', now())`,
     [SUPER.email, await bcrypt.hash(SUPER.password, 4)]);
@@ -53,7 +69,7 @@ export const tenantId = async (slug = TENANT) => (await pool.query(`SELECT id FR
 export const agent = () => request.agent(app);
 
 /** API path for an endpoint in an organisation ('platform' for the super admin console). */
-export const api = (endpoint, slug = TENANT) => (endpoint === 'platform' ? '/api/platform' : `/api/t/${slug}/${endpoint}`);
+export const api = (endpoint, slug = TENANT) => (endpoint === 'platform' ? '/api/platform' : `/api/${slug}/${endpoint}`);
 
 /** POST {action, data} to an action endpoint (in the default test organisation). */
 export const call = (a, endpoint, action, data = {}) => a.post(api(endpoint)).send({ action, data });
@@ -149,7 +165,7 @@ export const wrongAnswers = { a: ['y'], b: ['false'], c: ['n'] };
 /** Create a complete course and submit it for review. */
 export async function submittedCourse(teacher, title = 'Algebra Basics', slug = TENANT) {
   const { body: { id } } = await callIn(slug, teacher, 'courses', 'create', { title }).expect(200);
-  await callIn(slug, teacher, 'courses', 'updateMeta', { id, title, summary: 'Learn algebra', category: 'Mathematics', outline: 'Variables, equations', level: 'beginner' }).expect(200);
+  await callIn(slug, teacher, 'courses', 'updateMeta', { id, title, summary: 'Learn algebra', category: 'Mathematics', outline: 'Variables, equations', level: 'beginner', suggestedPrice: 5000 }).expect(200);
   await callIn(slug, teacher, 'courses', 'saveContent', { id, content: sampleContent() }).expect(200);
   await callIn(slug, teacher, 'courses', 'submit', { id }).expect(200);
   return id;
@@ -166,3 +182,12 @@ export async function publishedCourse(teacher, admin, title, slug = TENANT) {
 
 export const auditCount = async (action, targetId) =>
   (await pool.query(`SELECT count(*)::int AS n FROM audit_logs WHERE action = $1 AND ($2::text IS NULL OR target_id = $2)`, [action, targetId ?? null])).rows[0].n;
+
+/** Every course is paid: a learner gets access by paying through the Paystack test server. Returns the verify response. */
+export async function buy(s, courseId, slug = TENANT) {
+  const c = await callIn(slug, s.a ?? s, 'payments', 'checkout', { courseId });
+  if (c.status !== 200) throw new Error(`checkout ${c.status}: ${JSON.stringify(c.body)}`);
+  const v = await callIn(slug, s.a ?? s, 'payments', 'verify', { reference: c.body.reference });
+  if (v.status !== 200 || v.body.payment.status !== 'success') throw new Error(`verify ${v.status}: ${JSON.stringify(v.body)}`);
+  return v;
+}

@@ -20,6 +20,8 @@ import { Profile } from './pages/Profile';
 import { VerifyCertificate } from './pages/VerifyCertificate';
 import { Dashboard } from './pages/student/Dashboard';
 import { Player } from './pages/student/Player';
+import { PaymentResult } from './pages/student/PaymentResult';
+import { AdminPayments } from './pages/admin/Payments';
 import { CourseEditor } from './pages/teacher/CourseEditor';
 import { TeachHome } from './pages/teacher/TeachHome';
 import { AdminSettings } from './pages/admin/Settings';
@@ -59,6 +61,7 @@ export function App() {
         <Route path="verify/:code" element={<VerifyCertificate />} />
 
         <Route path="dashboard" element={<Guard roles={['student']}><Dashboard /></Guard>} />
+        <Route path="payment" element={<Guard roles={['student']}><PaymentResult /></Guard>} />
         <Route path="profile" element={<Guard personal><Profile /></Guard>} />
         <Route path="notifications" element={<Guard personal><Notifications /></Guard>} />
 
@@ -74,6 +77,7 @@ export function App() {
         <Route path="admin/certificates" element={<Guard roles={['admin']}><AdminCertificates /></Guard>} />
         <Route path="admin/audit" element={<Guard roles={['admin']}><AdminAudit /></Guard>} />
         <Route path="admin/settings" element={<Guard roles={['admin']}><AdminSettings /></Guard>} />
+        <Route path="admin/payments" element={<Guard roles={['admin']}><AdminPayments /></Guard>} />
         <Route path="*" element={<Empty title="This page does not exist"><Link to="/">Browse courses</Link></Empty>} />
       </Route>
       {/* The course player uses the full screen */}

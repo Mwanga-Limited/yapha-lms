@@ -44,7 +44,7 @@ export function Catalog() {
           </form>
           {!user && (
             <ul className="hero-ticks">
-              <li>Free to join</li><li>Self-paced</li><li>Verifiable certificates</li>
+              <li>Pay once, keep access</li><li>Self-paced</li><li>Verifiable certificates</li>
             </ul>
           )}
         </div>
@@ -74,7 +74,7 @@ export function Catalog() {
       {loading && <Loading label="Finding courses" />}
       {error ? <ErrorState error={error} onRetry={reload} /> : null}
       {data && !loading && (data.courses.length ? (
-        <div className="grid">{data.courses.map((c, i) => <CourseCard key={c.id} c={c} index={i} />)}</div>
+        <div className="grid">{data.courses.map((c) => <CourseCard key={c.id} c={c} />)}</div>
       ) : (
         <Empty title={q || category || level ? 'No courses match these filters' : 'No courses are published yet'}>
           {(q || category || level) && <button className="btn btn-secondary" onClick={() => { setText(''); setParams({}); }}>Clear filters</button>}
@@ -92,7 +92,7 @@ function CatalogIntro() {
   const firstName = user?.name.split(' ')[0] ?? '';
   const role = user?.role;
   const badge = (suffix?: string) => (
-    <span className="hero-badge"><Leaf className="hero-badge-leaf" />{tenant.name}{suffix ? ` · ${suffix}` : ''}</span>
+    <span className="hero-badge"><span className="hero-badge-dot" aria-hidden />{tenant.name}{suffix ? ` · ${suffix}` : ''}</span>
   );
 
   if (role === 'teacher') {
@@ -133,6 +133,20 @@ function CatalogIntro() {
       {badge()}
       <h1>Learn at your pace. <span className="hl-text">Get certified</span> for it.</h1>
       <p className="hero-lede">Practical courses reviewed by {tenant.name}, short lessons and quizzes, and a certificate anyone can verify online.</p>
+      {tenant.access.signup === 'open' ? (
+        <div className="hero-join">
+          <div className="hero-actions">
+            <Link className="btn btn-accent btn-lg" to="/register">Join as a student</Link>
+            <Link className="btn btn-secondary btn-lg" to="/register?as=teacher">Join as a teacher</Link>
+          </div>
+          <p className="hero-signin">Already have an account? <Link to="/login">Sign in</Link></p>
+        </div>
+      ) : (
+        <div className="hero-join">
+          <div className="hero-actions"><Link className="btn btn-primary btn-lg" to="/login">Sign in</Link></div>
+          <p className="hero-signin">New here? {tenant.name} adds people by invitation. Ask an administrator to invite you.</p>
+        </div>
+      )}
     </>
   );
 }

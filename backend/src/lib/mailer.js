@@ -1,3 +1,4 @@
+import { formatMoney } from './money.js';
 import nodemailer from 'nodemailer';
 import { config } from '../config.js';
 import { currentTenant, settingsOf, tenantName } from './tenant.js';
@@ -88,6 +89,10 @@ export const emails = {
     paragraphs: [`You scored ${score}% on "${quiz.title}" in "${course.title}". The pass mark is ${settingsOf(currentTenant()).quiz.passMark}%.`,
       passed ? 'Well done.' : state.lockedUntil ? `You have used all ${settingsOf(currentTenant()).quiz.maxAttempts} attempts. The quiz unlocks at ${new Date(state.lockedUntil).toUTCString()}.` : `Attempts left: ${state.attemptsLeft}.`],
     action: { label: 'Back to course', url: url(`/learn/${course.id}`) } }),
+  paymentReceipt: (u, course, payment) => sendMail({ to: u.email, subject: `Payment received: ${course.title}`, title: 'Payment received',
+    paragraphs: [`We received your payment of ${formatMoney(payment.amount_minor, payment.currency)} for "${course.title}". You now have full access to the course.`,
+      `Payment reference: ${payment.reference}`],
+    action: { label: 'Start learning', url: url(`/learn/${course.id}`) } }),
   certificate: (u, cert) => sendMail({ to: u.email, subject: `Certificate issued: ${cert.course_title}`, title: 'Congratulations!',
     paragraphs: [`You completed "${cert.course_title}". Your certificate verification code is ${cert.code}.`],
     action: { label: 'View certificate', url: url(`/verify/${cert.code}`) } }),

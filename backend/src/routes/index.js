@@ -13,6 +13,7 @@ import { courseRoutes } from './courses.js';
 import { fileHandler, uploadHandler, uploadMiddleware } from './files.js';
 import { learnRoutes } from './learn.js';
 import { organisationRoutes } from './organisations.js';
+import { paymentRoutes, paystackWebhook } from './payments.js';
 import { platformRoutes } from './platform.js';
 
 /**
@@ -38,7 +39,7 @@ const scoped = (handler) => async (req, res) => {
 const authLimiter = () => rateLimit({ windowMs: 15 * 60 * 1000, limit: config.rateLimitMax, standardHeaders: 'draft-7', legacyHeaders: false,
   message: { error: 'Too many requests. Please wait a few minutes and try again.' } });
 
-/** /api/t/:tenant/... — everything an organisation's members use (the original 8 endpoints, per organisation). */
+/** /api/:tenant/... — everything an organisation's members use (the original 8 endpoints, per organisation). */
 export function tenantApi() {
   const r = express.Router({ mergeParams: true });
   r.use(async (req, _res, next) => {
@@ -52,6 +53,8 @@ export function tenantApi() {
   r.post('/courses', scoped(courseRoutes));
   r.post('/learn', scoped(learnRoutes));
   r.post('/admin', scoped(adminRoutes));
+  r.post('/payments', scoped(paymentRoutes));
+  r.post('/payments/webhook', scoped(paystackWebhook));   // from Paystack, signed with the organisation's secret key
   r.post('/upload', uploadMiddleware, scoped(uploadHandler));
   r.get('/files/:id', scoped(fileHandler));
   r.get('/certificates/:code', scoped(certificateHandler));

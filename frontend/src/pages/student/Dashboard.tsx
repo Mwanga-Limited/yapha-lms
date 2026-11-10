@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { api, apiUrl } from '../../api';
 import { useAuth } from '../../auth';
-import { Thumb } from '../../components/CourseCard';
+import { formatMoney } from '../../money';
 import { Empty, ErrorState, Loading, ProgressBar, fmtDate, useDocumentTitle, useLoad } from '../../ui';
 
 interface DashCourse {
@@ -12,10 +12,13 @@ interface DashCourse {
   certificate: { code: string; revoked: boolean } | null;
 }
 
+interface Receipt { id: string; reference: string; amount: number; currency: string; paidAt: string; course: { id: string; title: string } }
+
 export function Dashboard() {
   useDocumentTitle('My learning');
   const { user } = useAuth();
   const { data, error, loading, reload } = useLoad(() => api<{ courses: DashCourse[] }>('account', 'dashboard'), []);
+  const receipts = useLoad(() => api<{ payments: Receipt[] }>('payments', 'mine'), []);
   const courses = data?.courses ?? [];
   const inProgress = courses.filter((c) => !c.completedAt);
   const done = courses.filter((c) => c.completedAt);
@@ -32,7 +35,6 @@ export function Dashboard() {
 
       {next && (
         <section className="resume-card">
-          <Thumb url={next.thumbnailUrl} title={next.title} />
           <div className="resume-body">
             <span className="muted small">Continue where you left off</span>
             <h2>{next.title}</h2>
@@ -56,7 +58,6 @@ export function Dashboard() {
           <ul className="my-list">
             {inProgress.slice(1).map((c) => (
               <li key={c.id} className="my-row">
-                <Thumb url={c.thumbnailUrl} title={c.title} />
                 <div className="my-main">
                   <Link to={`/learn/${c.id}`}><strong>{c.title}</strong></Link>
                   <span className="muted small">{c.teacherName} · {c.progress.done} of {c.progress.total} done</span>
@@ -75,7 +76,6 @@ export function Dashboard() {
           <ul className="my-list">
             {done.map((c) => (
               <li key={c.id} className="my-row">
-                <Thumb url={c.thumbnailUrl} title={c.title} />
                 <div className="my-main">
                   <Link to={`/learn/${c.id}`}><strong>{c.title}</strong></Link>
                   <span className="muted small">Completed {fmtDate(c.completedAt)}</span>
@@ -89,6 +89,21 @@ export function Dashboard() {
                     <Link className="btn btn-secondary btn-sm" to={`/verify/${c.certificate.code}`}>Share link</Link>
                   </div>
                 )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {(receipts.data?.payments.length ?? 0) > 0 && (
+        <section className="block" data-testid="receipts">
+          <h2>Payments</h2>
+          <ul className="my-list">
+            {receipts.data!.payments.map((p) => (
+              <li key={p.id} className="my-row">
+                <div className="my-main">
+                  <Link to={`/learn/${p.course.id}`}><strong>{p.course.title}</strong></Link>
+                  <span className="muted small">{formatMoney(p.amount, p.currency)} · paid {fmtDate(p.paidAt)} · reference {p.reference}</span>
+                </div>
               </li>
             ))}
           </ul>

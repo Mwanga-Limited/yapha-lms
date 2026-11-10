@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
 import type { CourseMeta } from '../api';
 import { levelLabel } from '../ui';
+import { formatMoney } from '../money';
 
-/** The two-leaf shape used as decoration on covers and in the course page header. */
+/** The two-leaf shape used as decoration in the course page header. */
 export function Leaf({ className, color = 'currentColor' }: { className?: string; color?: string }) {
   return (
     <svg aria-hidden className={className} viewBox="0 0 52 52" fill={color}>
@@ -12,26 +13,16 @@ export function Leaf({ className, color = 'currentColor' }: { className?: string
   );
 }
 
-// Generated covers use the organisation's colours, picked per course so neighbouring cards differ.
-const COVERS = ['cover-accent', 'cover-ink', 'cover-tint', 'cover-ink2'];
-
-export function Thumb({ url, title, index }: { url: string | null; title: string; index?: number }) {
-  if (url) return <img className="thumb" src={url} alt="" loading="lazy" />;
-  // In a list, covers take turns; elsewhere the course title picks one, so it stays the same everywhere.
-  const n = index ?? [...title].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 997, 7);
-  return <div className={`thumb thumb-gen ${COVERS[n % COVERS.length]}`} aria-hidden><Leaf className="thumb-leaf" /></div>;
-}
-
-export function CourseCard({ c, index }: { c: CourseMeta & { teacherName: string; lessonCount?: number; quizCount?: number; learners?: number }; index?: number }) {
+export function CourseCard({ c }: { c: CourseMeta & { teacherName: string; lessonCount?: number; quizCount?: number; learners?: number } }) {
   const lessons = c.lessonCount != null ? `${c.lessonCount} ${c.lessonCount === 1 ? 'lesson' : 'lessons'}` : null;
   return (
     <Link to={`/courses/${c.id}`} className="course-card">
-      <Thumb url={c.thumbnailUrl} title={c.title} index={index} />
       <div className="course-card-body">
         <span className="course-cat">{c.category}</span>
         <h3>{c.title}</h3>
         <p className="course-meta">{[levelLabel(c.level), lessons].filter(Boolean).join(' · ')}</p>
         <p className="course-teacher">by {c.teacherName}</p>
+        {c.price > 0 && <p className="course-price">{formatMoney(c.price, c.currency)}</p>}
       </div>
     </Link>
   );

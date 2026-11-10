@@ -26,6 +26,10 @@ export const config = {
   orgSignupOpen: (env.ORG_SIGNUP || 'open') !== 'closed',   // organisations register themselves at /register
   orgSignupPerHour: Number(env.ORG_SIGNUP_PER_HOUR || (isProd ? 5 : 100)),   // registrations per IP per hour
   googleClientId: env.GOOGLE_CLIENT_ID || '',
+  // Encrypts secrets kept in the database (organisations' Paystack secret keys). Keep it safe and never change it:
+  // changing it means every organisation has to enter its Paystack keys again.
+  dataEncryptionKey: required('DATA_ENCRYPTION_KEY', 'dev-only-data-encryption-key-change-me'),
+  paystackApiUrl: (env.PAYSTACK_API_URL || 'https://api.paystack.co').replace(/\/$/, ''),
   uploadDir: path.resolve(env.UPLOAD_DIR || 'uploads'),
   frontendDist: path.resolve(env.FRONTEND_DIST || '../frontend/dist'),
   bcryptRounds: Number(env.BCRYPT_ROUNDS || 12),

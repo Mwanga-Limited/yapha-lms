@@ -3,9 +3,32 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../../api';
 import { ContentPreview } from '../../components/ContentPreview';
 import { Learners } from '../../components/Learners';
-import { Alert, Button, ErrorState, Loading, ReasonModal, StatusBadge, Tabs, TextArea, fmtDateTime, levelLabel, useAction, useDocumentTitle, useLoad, useToast } from '../../ui';
+import { Alert, Button, ErrorState, Field, Loading, ReasonModal, StatusBadge, Tabs, TextArea, fmtDateTime, levelLabel, useAction, useDocumentTitle, useLoad, useToast } from '../../ui';
 import { CourseActions, type CourseGet } from '../teacher/CourseEditor';
 import { AdminNav } from './Dashboard';
+import { formatMoney, fromMinor } from '../../money';
+import type { CourseMeta } from '../../api';
+
+/** The Admin sets what learners pay, before or after publishing. Learners who already paid keep their access. */
+function PriceEditor({ c, reload }: { c: CourseMeta; reload: () => Promise<void> }) {
+  const [price, setPrice] = useState(c.price > 0 ? String(fromMinor(c.price)) : c.suggestedPrice > 0 ? String(fromMinor(c.suggestedPrice)) : '');
+  const { busy, run } = useAction();
+  const changed = Number(price) > 0 && Number(price) !== fromMinor(c.price);
+  return (
+    <section className="panel price-panel" data-testid="price-editor">
+      <h2>Price</h2>
+      <p className="muted small">
+        {c.price > 0 ? <>Learners pay <strong>{formatMoney(c.price, c.currency)}</strong>.</> : <strong className="warn-text">No price yet: learners can't enrol and the course can't be published.</strong>}
+        {' '}The teacher suggested {c.suggestedPrice > 0 ? formatMoney(c.suggestedPrice, c.currency) : 'no price'}.
+        {' '}Every course is paid. One payment gives full access; changing the price doesn't affect learners who already have access.
+      </p>
+      <form className="row-gap" onSubmit={(e) => { e.preventDefault(); void run(async () => { await api('courses', 'setPrice', { id: c.id, price: Number(price) }); await reload(); }, 'Price saved'); }}>
+        <Field label={`Price (${c.currency})`} type="number" min={1} max={10000000} step="0.01" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} />
+        <Button type="submit" busy={busy} disabled={!changed || price === ''}>Save price</Button>
+      </form>
+    </section>
+  );
+}
 
 export function AdminCourse() {
   const { id = '' } = useParams();
@@ -13,6 +36,7 @@ export function AdminCourse() {
   const [tab, setTab] = useState<'content' | 'learners' | 'history'>('content');
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState('');
+  const [approvePrice, setApprovePrice] = useState<string | null>(null);
   const { busy, run } = useAction();
   const toast = useToast();
   useDocumentTitle(data?.course.title ?? 'Course');
@@ -23,6 +47,8 @@ export function AdminCourse() {
   const g = data;
   const c = g.course;
   const inReview = g.draft?.status === 'in_review';
+  const newInReview = inReview && !g.live;
+  const priceOnApproval = approvePrice ?? String(fromMinor(c.suggestedPrice));
   const shown = inReview || (!g.live && g.draft) ? g.draft!.content : g.live?.content;
 
   return (
@@ -46,14 +72,24 @@ export function AdminCourse() {
             {g.problems.length > 0 && <Alert tone="warn" title="Automatic checks found issues">{g.problems.join('; ')}</Alert>}
           </div>
           <div className="decision-actions">
+            {newInReview && (
+              <Field label={`Price learners pay (${c.currency})`} type="number" min={1} required max={10000000} step="0.01" inputMode="decimal"
+                value={priceOnApproval} onChange={(e) => setApprovePrice(e.target.value)}
+                hint={`The teacher suggested ${c.suggestedPrice > 0 ? formatMoney(c.suggestedPrice, c.currency) : 'no price'}. Every course is paid. You can change it later.`} />
+            )}
             <TextArea label="Note to the teacher (optional)" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
             <div className="row-gap">
-              <Button busy={busy} onClick={() => run(async () => { await api('admin', 'approveCourse', { versionId: g.draft!.id, note }); await reload(); }, 'Course approved')}>Approve</Button>
+              <Button busy={busy} disabled={newInReview && !(Number(priceOnApproval) > 0)} onClick={() => run(async () => {
+                await api('admin', 'approveCourse', { versionId: g.draft!.id, note, ...(newInReview ? { price: Number(priceOnApproval) } : {}) });
+                await reload();
+              }, 'Course approved')}>Approve</Button>
               <Button variant="danger" onClick={() => setRejecting(true)}>Reject with a reason</Button>
             </div>
           </div>
         </section>
       )}
+
+      {!newInReview && <PriceEditor key={`${c.id}-${c.price}`} c={c} reload={reload} />}
 
       <div className="meta-grid">
         <div><span className="muted small">Category</span><div>{c.category || '—'}</div></div>

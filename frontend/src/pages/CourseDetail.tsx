@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type CourseMeta, type LessonPayload, type OutlineSection } from '../api';
 import { useAuth } from '../auth';
-import { Thumb } from '../components/CourseCard';
 import { LessonView } from '../components/LessonView';
+import { formatMoney } from '../money';
 import { Alert, Button, ErrorState, Loading, Modal, StatusBadge, levelLabel, plural, useAction, useDocumentTitle, useLoad } from '../ui';
 
 interface Detail {
@@ -11,6 +11,7 @@ interface Detail {
   outline: OutlineSection[];
   teacher: { id: string; name: string; bio: string | null; expertise: string | null; photoUrl: string | null; courses: number };
   viewer: { enrolled: boolean; completed: boolean; canManage: boolean; signedIn: boolean; emailVerified: boolean };
+  paymentsReady: boolean;
 }
 
 export function CourseDetail() {
@@ -25,15 +26,19 @@ export function CourseDetail() {
   if (loading && !data) return <Loading />;
   if (error) return <ErrorState error={error} />;
   if (!data) return null;
-  const { course, outline, teacher, viewer } = data;
+  const { course, outline, teacher, viewer, paymentsReady } = data;
+  const priced = course.price > 0;   // every course is paid; 0 = the Admin hasn't set a price yet
+  const price = formatMoney(course.price, course.currency);
   const lessons = outline.flatMap((s) => s.items).filter((i) => i.kind === 'lesson').length;
   const quizzes = outline.flatMap((s) => s.items).filter((i) => i.kind === 'quiz').length;
 
   const enrol = async () => {
     if (!user) { nav('/login', { state: { from: `/courses/${id}` } }); return; }
-    const r = await run(() => api('learn', 'enrol', { courseId: id }), 'You are enrolled');
-    if (r) nav(`/learn/${id}`);
+    // Every course is paid: go to Paystack's secure checkout; Paystack brings the learner back to /payment.
+    const r = await run(() => api<{ authorizationUrl: string }>('payments', 'checkout', { courseId: id }));
+    if (r) window.location.assign(r.authorizationUrl);
   };
+  const canBuy = priced && paymentsReady;
   const openPreview = (lessonId: string) => run(async () => {
     const r = await api<{ lesson: LessonPayload }>('courses', 'preview', { courseId: id, lessonId });
     setPreview(r.lesson);
@@ -57,14 +62,27 @@ export function CourseDetail() {
             {viewer.enrolled && user?.role === 'student' ? (
               <Link className="btn btn-primary btn-lg" to={`/learn/${id}`}>{viewer.completed ? 'Review the course' : 'Continue learning'}</Link>
             ) : course.status === 'published' && !viewer.canManage && (!user || user.role === 'student') ? (
-              <Button className="btn-lg" busy={busy} onClick={enrol} disabled={!!user && !user.emailVerified}>Enrol for free</Button>
+              <div className="buy">
+                {priced && <p className="detail-price" data-testid="price">{price}</p>}
+                {priced && (
+                  <Button className="btn-lg" busy={busy} onClick={enrol} disabled={(!!user && !user.emailVerified) || !canBuy}>
+                    Enrol for {price}
+                  </Button>
+                )}
+                {canBuy && <p className="muted small buy-note">One payment, full access to every lesson, quiz and the certificate. Secure payment by Paystack.</p>}
+              </div>
             ) : null}
             {viewer.canManage && <Link className="btn btn-secondary" to={user?.id === course.teacherId ? `/teach/courses/${id}` : `/admin/courses/${id}`}>Manage course</Link>}
           </div>
           {user && user.role !== 'student' && !viewer.canManage && <p className="muted">Courses and certificates are for student accounts. You are signed in as {user.role === 'admin' ? 'an Admin' : 'a Teacher'}.</p>}
           {user && user.role === 'student' && !user.emailVerified && !viewer.enrolled && <Alert tone="warn">Verify your email to enrol. We sent you a link when you signed up.</Alert>}
+          {!canBuy && !viewer.enrolled && course.status === 'published' && !viewer.canManage && (
+            <Alert tone="warn">{priced
+              ? "Enrolment isn't open yet: payments are not set up for this organisation. Please contact your administrator."
+              : "Enrolment isn't open yet: this course doesn't have a price. Please check back soon."}</Alert>
+          )}
+          {viewer.canManage && <p className="muted small">Price: <strong>{priced ? price : 'not set yet (learners cannot enrol)'}</strong>{user?.role === 'admin' ? '' : ' (set by the Admin)'}</p>}
         </div>
-        <div className="detail-thumb"><Thumb url={course.thumbnailUrl} title={course.title} /></div>
       </section>
 
       <div className="detail-cols">
@@ -116,7 +134,7 @@ export function CourseDetail() {
 
       <Modal title={preview?.title ?? 'Preview'} open={!!preview} onClose={() => setPreview(null)} wide>
         {preview && <LessonView lesson={preview} />}
-        <div className="row-end"><Button onClick={() => { setPreview(null); void enrol(); }}>Enrol to see every lesson</Button></div>
+        <div className="row-end">{canBuy && <Button onClick={() => { setPreview(null); void enrol(); }}>Enrol for {price} to see every lesson</Button>}</div>
       </Modal>
     </div>
   );

@@ -30,7 +30,8 @@ export function createApp() {
       },
     },
   }));
-  app.use(express.json({ limit: '5mb' }));
+  // rawBody: Paystack webhooks are checked against a signature of the exact bytes received.
+  app.use(express.json({ limit: '5mb', verify: (req, _res, buf) => { if (req.originalUrl.endsWith('/payments/webhook')) req.rawBody = buf; } }));
   app.use(cookieParser());
 
   // CSRF defence in depth: JSON-only POSTs (plus SameSite=strict cookies).
@@ -45,10 +46,11 @@ export function createApp() {
     catch { res.status(503).json({ ok: false, error: 'Database unavailable' }); }
   });
 
-  // ---- the API: the same 8 endpoints for every organisation under /api/t/<organisation>/..., plus the platform console
-  app.use('/api/t/:tenant', tenantApi());   // auth, account, courses, learn, admin, upload, files/:id, certificates/:code
+  // ---- the API: the platform's own routes first, then the same endpoints for every organisation under /api/<organisation>/...
+  // "platform", "organisations" and "health" are reserved words (RESERVED_SLUGS), so no organisation can take them.
   app.use('/api/platform', platformApi());  // super admin: sign-in, organisations, cross-organisation views
   app.use('/api/organisations', organisationsApi());  // public: an organisation registers itself
+  app.use('/api/:tenant', tenantApi());     // auth, account, courses, learn, admin, payments, upload, files/:id, certificates/:code
 
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 
