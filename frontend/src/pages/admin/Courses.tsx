@@ -1,3 +1,4 @@
+import { formatMoney } from '../../money';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type CourseMeta } from '../../api';
@@ -30,13 +31,14 @@ export function AdminCourses() {
       {data && data.courses.length > 0 && (
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Course</th><th>Teacher</th><th>Status</th><th>Enrolments</th><th>Updated</th></tr></thead>
+            <thead><tr><th>Course</th><th>Teacher</th><th>Status</th><th>Price</th><th>Enrolments</th><th>Updated</th></tr></thead>
             <tbody>
               {data.courses.map((c) => (
                 <tr key={c.id}>
                   <td><Link to={`/admin/courses/${c.id}`}><strong>{c.title}</strong></Link></td>
                   <td>{c.teacherName}</td>
                   <td><StatusBadge status={c.status} />{c.revisionStatus && c.status !== 'draft' && c.status !== 'in_review' && c.status !== 'rejected' && <div className="small muted">revision {c.revisionStatus.replace('_', ' ')}</div>}</td>
+                  <td>{c.price > 0 ? formatMoney(c.price, c.currency) : <span className="warn-text">Not set</span>}</td>
                   <td>{c.learners}</td>
                   <td>{fmtDate(c.updatedAt)}</td>
                 </tr>

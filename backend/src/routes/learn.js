@@ -64,7 +64,10 @@ async function markLessonComplete(db, ctx, course, enrollment, lesson) {
 }
 
 export const learnRoutes = actionEndpoint({
-  /** EN-01 (one active enrolment) + EN-03 (verified email). Payment is Phase 2. */
+  /**
+   * EN-01 (one active enrolment) + EN-03 (verified email). Every course is paid, so this only reports whether the
+   * learner already has access; enrolment happens when the payment succeeds (payments checkout → verify / webhook).
+   */
   enrol: {
     auth: 'user',
     verified: true,
@@ -76,15 +79,11 @@ export const learnRoutes = actionEndpoint({
       if (!c) notFound('Course');
       if (c.status !== 'published') fail(409, 'This course is not open for enrolment');
       if (c.teacher_id === ctx.user.id) fail(409, 'You teach this course');
-      const { rows } = await db.query(
-        `INSERT INTO enrollments (user_id, course_id) VALUES ($1,$2)
-         ON CONFLICT (user_id, course_id) WHERE status = 'active' DO NOTHING RETURNING *`, [ctx.user.id, c.id]);
-      if (!rows[0]) return { ok: true, alreadyEnrolled: true };
-      await audit(db, ctx, { action: 'enrollment.create', targetType: 'enrollment', targetId: rows[0].id, newValues: { courseId: c.id, course: c.title } });
-      await notify(db, ctx.user.id, { type: 'enrollment', title: 'Enrolment confirmed', body: `You're enrolled in ${c.title}.`, link: `/learn/${c.id}` });
-      const learner = ctx.user;
-      ctx.after(() => emails.enrolled(learner, c));
-      return { ok: true, enrollmentId: rows[0].id };
+      // Every course is paid: the enrolment is created when Paystack confirms the payment (see payments.js).
+      const { rows: [e] } = await db.query(`SELECT 1 FROM enrollments WHERE user_id = $1 AND course_id = $2 AND status = 'active'`, [ctx.user.id, c.id]);
+      if (e) return { ok: true, alreadyEnrolled: true };
+      if (c.price_minor <= 0) fail(409, 'This course is not available yet: it has no price', { code: 'NOT_PRICED' });
+      fail(402, 'Pay for this course to get access', { code: 'PAYMENT_REQUIRED' });
     }),
   },
 

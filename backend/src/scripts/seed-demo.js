@@ -65,8 +65,8 @@ try {
       await upsertUser(db, t.id, 'student@example.com', o.slug === 'acme' ? 'Tunde Bakare' : 'Tunde Bakare (Globex)', 'student');
       if ((await db.query(`SELECT 1 FROM courses WHERE tenant_id = $1 AND title = $2`, [t.id, o.course])).rowCount) return;
       const { rows: [c] } = await db.query(
-        `INSERT INTO courses (tenant_id, teacher_id, title, summary, outline, category, level, language, description, status, published_at)
-         VALUES ($1,$2,$3,$4,$5,'Business','beginner','English',$6,'published', now()) RETURNING id`,
+        `INSERT INTO courses (tenant_id, teacher_id, title, summary, outline, category, level, language, description, status, published_at, price_minor, suggested_price_minor)
+         VALUES ($1,$2,$3,$4,$5,'Business','beginner','English',$6,'published', now(), 500000, 500000) RETURNING id`,   -- ₦5,000: every course is paid
         [t.id, teacherId, o.course, `A short, practical course from ${o.name}.`, 'Set up a cash book\nSeparate business and personal money\nRead your weekly numbers',
           'A practical introduction. No background needed.']);
       const { rows: [v] } = await db.query(

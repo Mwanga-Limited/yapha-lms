@@ -5,11 +5,13 @@ import { audit } from '../lib/audit.js';
 import {
   computeProgress, quizRules, emptyContent, findItem, lessonsOf, normaliseContent, outlineOf, quizzesOf, submissionProblems,
 } from '../lib/content.js';
-import { apiBase } from '../lib/tenant.js';
+import { apiBase, currentTenant, settingsOf } from '../lib/tenant.js';
+import { formatMoney, toMinor } from '../lib/money.js';
 import { fail, notFound } from '../lib/errors.js';
 import { notify, notifyAdmins } from '../lib/notify.js';
 import { signedFileUrl } from '../lib/security.js';
 import { learnerState } from '../lib/learning.js';
+import { paymentAccount } from '../lib/payments.js';
 
 const PAGE_SIZE = 12;
 const fileUrl = (fid) => (fid ? `${apiBase()}/files/${fid}` : null);
@@ -27,6 +29,8 @@ export function courseMeta(c) {
     id: c.id, title: c.title, summary: c.summary, description: c.description, outline: c.outline, category: c.category,
     level: c.level, language: c.language, thumbnailFileId: c.thumbnail_file_id, thumbnailUrl: fileUrl(c.thumbnail_file_id),
     status: c.status, publishedAt: c.published_at, createdAt: c.created_at, updatedAt: c.updated_at, teacherId: c.teacher_id,
+    // Prices in the smallest unit (kobo…). Every course is paid: price is what learners pay (set by the Admin); 0 = not priced yet.
+    price: c.price_minor ?? 0, suggestedPrice: c.suggested_price_minor ?? 0, currency: settingsOf(currentTenant()).payments.currency,
   };
 }
 
@@ -76,8 +80,11 @@ const metaSchema = z.object({
   level: z.enum(['beginner', 'intermediate', 'advanced']).default('beginner'),
   language: str(60).default('English'),
   thumbnailFileId: id.nullable().optional(),
+  suggestedPrice: z.number().min(0).max(10_000_000).optional(),   // the teacher's suggested price, in naira (or the organisation's currency); needed before submitting
 });
-const META_COLS = ['title', 'summary', 'description', 'outline', 'category', 'level', 'language', 'thumbnail_file_id'];
+const META_COLS = ['title', 'summary', 'description', 'outline', 'category', 'level', 'language', 'thumbnail_file_id', 'suggested_price_minor'];
+/** Every course is paid. The Admin sets the price learners pay, in the organisation's currency (e.g. 15000 = ₦15,000). */
+export const priceSchema = z.number().positive('Every course needs a price above 0').max(10_000_000, 'The price is too high');
 
 export const courseRoutes = actionEndpoint({
   // ------------------------------------------------------------- public catalogue
@@ -87,7 +94,8 @@ export const courseRoutes = actionEndpoint({
     run: async ({ data }) => {
       const q = likeEscape(data.q);
       const params = [q, data.category, data.level, PAGE_SIZE, (data.page - 1) * PAGE_SIZE];
-      const where = `c.status = 'published'
+      // Every course is paid: a course without a price (published before prices existed) stays out of the catalogue.
+      const where = `c.status = 'published' AND c.price_minor > 0
         AND ($1 = '' OR c.title ILIKE '%'||$1||'%' OR c.summary ILIKE '%'||$1||'%' OR c.category ILIKE '%'||$1||'%' OR u.name ILIKE '%'||$1||'%')
         AND ($2 = '' OR c.category = $2) AND ($3 = '' OR c.level = $3)`;
       const [list, total, cats] = await Promise.all([
@@ -96,7 +104,7 @@ export const courseRoutes = actionEndpoint({
                  FROM courses c JOIN users u ON u.id = c.teacher_id JOIN course_versions v ON v.id = c.live_version_id
                 WHERE ${where} ORDER BY c.published_at DESC NULLS LAST LIMIT $4 OFFSET $5`, params),
         query(`SELECT count(*)::int AS n FROM courses c JOIN users u ON u.id = c.teacher_id WHERE ${where}`, params.slice(0, 3)),
-        query(`SELECT DISTINCT category FROM courses WHERE status = 'published' AND category <> '' ORDER BY category`),
+        query(`SELECT DISTINCT category FROM courses WHERE status = 'published' AND price_minor > 0 AND category <> '' ORDER BY category`),
       ]);
       return {
         courses: list.rows.map((c) => ({
@@ -129,6 +137,8 @@ export const courseRoutes = actionEndpoint({
         outline: c.live_content ? outlineOf(c.live_content) : [],
         teacher: { id: c.teacher_id, name: c.t_name, bio: c.t_bio, expertise: c.t_expertise, photoUrl: fileUrl(c.t_photo), courses: c.t_courses },
         viewer: { enrolled: !!enrollment, completed: !!enrollment?.completed_at, canManage: !!canManage, signedIn: !!user, emailVerified: !!user?.email_verified_at },
+        // Can learners pay here? (the organisation has connected Paystack)
+        paymentsReady: !!(await paymentAccount({ query }))?.secretKey,
       };
     },
   },
@@ -220,9 +230,11 @@ export const courseRoutes = actionEndpoint({
         if (!f.rowCount) fail(400, 'Upload the thumbnail first');
       }
       const values = [d.title, d.summary, d.description, d.outline, d.category, d.level, d.language,
-        d.thumbnailFileId === undefined ? c.thumbnail_file_id : d.thumbnailFileId];
+        d.thumbnailFileId === undefined ? c.thumbnail_file_id : d.thumbnailFileId,
+        d.suggestedPrice === undefined ? c.suggested_price_minor : toMinor(d.suggestedPrice)];
       const { rows: [u] } = await db.query(
-        `UPDATE courses SET title=$2, summary=$3, description=$4, outline=$5, category=$6, level=$7, language=$8, thumbnail_file_id=$9, updated_at=now()
+        `UPDATE courses SET title=$2, summary=$3, description=$4, outline=$5, category=$6, level=$7, language=$8, thumbnail_file_id=$9,
+                suggested_price_minor=$10, updated_at=now()
           WHERE id = $1 RETURNING *`, [c.id, ...values]);
       const oldV = {}, newV = {};
       for (const k of META_COLS) if (String(c[k] ?? '') !== String(u[k] ?? '')) { oldV[k] = c[k]; newV[k] = u[k]; }
@@ -304,6 +316,24 @@ export const courseRoutes = actionEndpoint({
     }),
   },
 
+  /** The Admin sets the price learners pay (above 0: every course is paid), before or after publishing. Learners who already have access keep it. */
+  setPrice: {
+    auth: ['admin'],
+    schema: z.object({ id, price: priceSchema }),
+    run: async (ctx) => tx(async (db) => {
+      const { rows: [c] } = await db.query(`SELECT * FROM courses WHERE id = $1 FOR UPDATE`, [ctx.data.id]);
+      if (!c) notFound('Course');
+      const price = toMinor(ctx.data.price);
+      if (price === c.price_minor) return { course: courseMeta(c) };
+      const { rows: [u] } = await db.query(`UPDATE courses SET price_minor = $2, updated_at = now() WHERE id = $1 RETURNING *`, [c.id, price]);
+      const { currency } = courseMeta(u);
+      await audit(db, ctx, { action: 'course.price_set', targetType: 'course', targetId: c.id, oldValues: { price: c.price_minor, currency }, newValues: { price, currency } });
+      await notify(db, c.teacher_id, { type: 'course', title: `Price updated: ${c.title}`,
+        body: `Learners now pay ${formatMoney(price, currency)}.`, link: `/teach/courses/${c.id}` });
+      return { course: courseMeta(u) };
+    }),
+  },
+
   /** CR-02: only an approved course can be published. */
   publish: {
     auth: ['teacher', 'admin'],
@@ -311,6 +341,7 @@ export const courseRoutes = actionEndpoint({
     run: async (ctx) => tx(async (db) => {
       const c = await manageable(db, ctx, ctx.data.id, { allowAdmin: true, lock: true });
       if (!c.live_version_id || !['approved', 'unpublished'].includes(c.status)) fail(409, 'Only an approved course can be published');
+      if (c.price_minor <= 0) fail(409, 'An Admin must set a price before this course can be published', { code: 'PRICE_REQUIRED' });
       await setStatus(db, ctx, c, 'published', 'course.publish', ', published_at = coalesce(published_at, now())');
       return { ok: true };
     }),

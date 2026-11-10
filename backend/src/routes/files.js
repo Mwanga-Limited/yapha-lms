@@ -34,7 +34,7 @@ export const uploadMiddleware = [
   upload.single('file'),
 ];
 
-/** POST /api/t/:tenant/upload (multipart: purpose, file). Files belong to the organisation. */
+/** POST /api/:tenant/upload (multipart: purpose, file). Files belong to the organisation. */
 export async function uploadHandler(req) {
   const rule = RULES[req.body?.purpose];
   const f = req.file;
@@ -56,7 +56,7 @@ export async function uploadHandler(req) {
   return { file: { id: row.id, name: f.originalname, size: f.size, mime: f.mimetype, url: rule.visibility === 'public' ? `${apiBase()}/files/${row.id}` : null } };
 }
 
-/** GET /api/t/:tenant/files/:id — public files openly; private lesson files with a signed URL (issued after an enrolment check).
+/** GET /api/:tenant/files/:id — public files openly; private lesson files with a signed URL (issued after an enrolment check).
  *  Only files of this organisation can be found (row-level security). */
 export async function fileHandler(req, res) {
   if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) fail(404, 'File not found');

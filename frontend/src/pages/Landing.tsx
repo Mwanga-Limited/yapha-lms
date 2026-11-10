@@ -12,7 +12,7 @@ export function Landing() {
     e.preventDefault();
     const s = slug.trim().toLowerCase().replace(/^https?:\/\/[^/]+/, '').replace(/^\/(t\/)?/, '').replace(/\/.*$/, '');
     if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(s) || RESERVED_PATHS.has(s)) { setError('Use the short name from your organisation’s address, e.g. acme-academy'); return; }
-    const r = await fetch(`/api/t/${s}/auth`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'me', data: {} }) }).catch(() => null);
+    const r = await fetch(`/api/${s}/auth`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'me', data: {} }) }).catch(() => null);
     if (!r) { setError('Cannot reach the server. Check your connection and try again.'); return; }
     if (r.status === 404) { setError(`No organisation uses “${s}”. Check the address you were given.`); return; }
     window.location.href = `/${s}/`;

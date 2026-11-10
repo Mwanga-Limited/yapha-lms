@@ -89,6 +89,7 @@ export function submissionProblems(course, content) {
   if (!course.summary?.trim()) p.push('Add a summary');
   if (!course.category?.trim()) p.push('Choose a category');
   if (!course.outline?.trim()) p.push('Add a course outline (CR-01)');
+  if (!(course.suggested_price_minor > 0) && !(course.price_minor > 0)) p.push('Suggest a price (every course is paid)');
   const lessons = lessonsOf(content);
   const quizzes = quizzesOf(content);
   if (!lessons.length) p.push('Add at least one lesson (CR-01)');

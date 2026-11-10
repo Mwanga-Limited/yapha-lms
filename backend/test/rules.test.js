@@ -4,6 +4,7 @@ import {
   ROOT, agent, auditCount, call, codeFromMail, correctAnswers, loginPrivileged, loginRoot, makeTeacher, outbox, pool,
   publishedCourse, registerStudent, resetDb, sampleContent, submittedCourse, tokenFromMail, wrongAnswers,
   api, passTime, watchVideo,
+  buy,
 } from './helpers.js';
 
 let root;
@@ -196,7 +197,7 @@ describe('Course approval (CR-01 … CR-05)', () => {
   test('CR-05: unpublished courses stay open to learners; enrolled courses cannot be deleted', async () => {
     const id = await publishedCourse(teacher, root, 'Soon Hidden');
     const s = await registerStudent('Early Bird');
-    await call(s.a, 'learn', 'enrol', { courseId: id }).expect(200);
+    await buy(s, id);
     await call(teacher, 'courses', 'unpublish', { id }).expect(200);
     assert.equal((await call(agent(), 'courses', 'catalog', { q: 'Soon Hidden' })).body.courses.length, 0);
     await call(agent(), 'courses', 'detail', { id }).expect(404);
@@ -231,9 +232,10 @@ describe('Enrolment access (EN-01 … EN-03)', () => {
 
   test('EN-01: at most one active enrolment per course', async () => {
     const s = await registerStudent('Double Enrol');
-    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
-    const again = await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
-    assert.equal(again.body.alreadyEnrolled, true);
+    await buy(s, courseId);
+    const again = await call(s.a, 'payments', 'checkout', { courseId }).expect(409);   // can't pay twice
+    assert.equal(again.body.code, 'ALREADY_ENROLLED');
+    assert.equal((await call(s.a, 'learn', 'enrol', { courseId }).expect(200)).body.alreadyEnrolled, true);
     const { rows: [{ n }] } = await pool.query(`SELECT count(*)::int AS n FROM enrollments WHERE user_id = $1 AND course_id = $2`, [s.id, courseId]);
     assert.equal(n, 1);
     await assert.rejects(pool.query(`INSERT INTO enrollments (tenant_id, user_id, course_id) SELECT tenant_id, $1, $2 FROM users WHERE id = $1`, [s.id, courseId]), /duplicate key/);
@@ -246,14 +248,14 @@ describe('Enrolment access (EN-01 … EN-03)', () => {
     await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: correctAnswers }).expect(403);
     await call(agent(), 'courses', 'preview', { courseId, lessonId: 'l1' }).expect(200);
     await call(agent(), 'courses', 'preview', { courseId, lessonId: 'l2' }).expect(403);
-    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    await buy(s, courseId);
     const q = await call(s.a, 'learn', 'quiz', { courseId, quizId: 'q1' }).expect(200);
     assert.ok(q.body.quiz.questions.every((x) => !('correct' in x)), 'answers are never sent to learners');
   });
 
   test('progress, resume position and dashboard', async () => {
     const s = await registerStudent('Progress Pat');
-    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    await buy(s, courseId);
     await call(s.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 42.5 }).expect(200);
     const l = await call(s.a, 'learn', 'lesson', { courseId, lessonId: 'l2' }).expect(200);
     assert.equal(l.body.positionSec, 42.5);
@@ -274,7 +276,7 @@ describe('Quiz attempts (QZ-01, QZ-02)', () => {
 
   test('grading: 70% pass mark, multi-select must match exactly', async () => {
     const s = await registerStudent('Grader');
-    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    await buy(s, courseId);
     const r = await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: { a: ['x'], b: ['true'], c: ['m'] } }).expect(200);
     assert.equal(r.body.result.score, 66.67);
     assert.equal(r.body.result.passed, false);
@@ -287,7 +289,7 @@ describe('Quiz attempts (QZ-01, QZ-02)', () => {
 
   test("the learner sees their latest score, not their best one; so does the teacher", async () => {
     const s = await registerStudent('Latest Score');
-    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    await buy(s, courseId);
     const first = await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: { a: ['x'], b: ['true'], c: ['m'] } }).expect(200);
     assert.equal(first.body.state.score, 66.67);
     const second = await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: wrongAnswers }).expect(200);
@@ -303,7 +305,7 @@ describe('Quiz attempts (QZ-01, QZ-02)', () => {
 
   test('3 failures lock the quiz for 24h, then 3 more attempts; Teacher/Admin can reset', async () => {
     const s = await registerStudent('Struggler');
-    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    await buy(s, courseId);
     for (let i = 0; i < 3; i++) await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: wrongAnswers }).expect(200);
     const locked = await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: correctAnswers }).expect(423);
     const hours = (new Date(locked.body.lockedUntil) - Date.now()) / 3600e3;
@@ -336,7 +338,7 @@ describe('Video lessons complete only when watched', () => {
   });
   const enrolled = async (name) => {
     const s = await registerStudent(name);
-    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    await buy(s, courseId);
     return s;
   };
   const lessonWatch = async (s) => (await call(s.a, 'learn', 'lesson', { courseId, lessonId: 'l2' }).expect(200)).body;
@@ -422,7 +424,7 @@ describe('No learning progress is lost with video completion', () => {
   });
   const enrolled = async (name) => {
     const s = await registerStudent(name);
-    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    await buy(s, courseId);
     const { rows: [e] } = await pool.query(`SELECT id FROM enrollments WHERE user_id = $1 AND course_id = $2`, [s.id, courseId]);
     return { ...s, enrollmentId: e.id };
   };
@@ -490,7 +492,7 @@ describe('Certificates (CC-01 … CC-03)', () => {
 
   test('CC-01/CC-02: complete only when every required lesson and quiz is done; exactly one certificate', async () => {
     const s = await registerStudent('Finisher');
-    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    await buy(s, courseId);
     let r = await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l1' }).expect(200);
     assert.equal(r.body.certificate, null);
     r = await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: correctAnswers }).expect(200);
@@ -513,7 +515,7 @@ describe('Certificates (CC-01 … CC-03)', () => {
 
   test('CC-03: an Admin can revoke with a reason; verification then shows it as revoked', async () => {
     const s = await registerStudent('Revoked Rita');
-    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    await buy(s, courseId);
     await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l1' });
     await watchVideo(s, courseId, 'l2');
     const r = await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: correctAnswers });
@@ -549,7 +551,7 @@ describe('Certificates are for Students only', () => {
 
   test('a learner promoted to Teacher before finishing gets no certificate and loses learner access', async () => {
     const s = await registerStudent('Promoted Before Finish');
-    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    await buy(s, courseId);
     await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l1' }).expect(200);
     await call(root, 'admin', 'changeRole', { userId: s.id, role: 'teacher' }).expect(200);
     const t = await loginPrivileged(s.email, 'Password123!');
@@ -575,7 +577,7 @@ describe('Audit log', () => {
     const s = await registerStudent('Notified Nia');
     const t = (await makeTeacher('Notify Teacher', root)).a;
     const id = await publishedCourse(t, root, 'Notify Course');
-    await call(s.a, 'learn', 'enrol', { courseId: id }).expect(200);
+    await buy(s, id);
     const n = (await call(s.a, 'account', 'notifications')).body;
     assert.ok(n.unread >= 1 && n.items[0].type === 'enrollment');
     await call(s.a, 'account', 'markNotificationsRead').expect(200);

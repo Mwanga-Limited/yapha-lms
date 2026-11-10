@@ -2,20 +2,20 @@
 
 Base URL (local): **`http://localhost:4000`**
 
-**Multitenant:** every organisation has the same 8 endpoints under **`/api/t/<organisation>/`**. The examples use the demo organisation `acme`; for another organisation, replace `acme` with its web address (e.g. `globex`). New organisations register themselves with `POST /api/organisations` (section 10). The platform super admin has one more endpoint, `POST /api/platform` (section 9).
+**Multitenant:** every organisation has the same 8 endpoints under **`/api/<organisation>/`**. The examples use the demo organisation `acme`; for another organisation, replace `acme` with its web address (e.g. `globex`). New organisations register themselves with `POST /api/organisations` (section 10). The platform super admin has one more endpoint, `POST /api/platform` (section 9).
 
 The 8 organisation endpoints (plus a health check). Five of them take an **action**:
 
 | # | Endpoint | Method | Who can call it | What it covers |
 |---|---|---|---|---|
-| 1 | `/api/t/acme/auth` | POST | anyone | sign-up, sign-in, 2FA, Google, sign-out, email verification, password reset |
-| 2 | `/api/t/acme/account` | POST | signed in | profile, password, authenticator app, notifications, teacher application, learner dashboard |
-| 3 | `/api/t/acme/courses` | POST | anyone / Teacher / Admin | catalogue, course page, preview; course authoring and publishing; learners; quiz resets |
-| 4 | `/api/t/acme/learn` | POST | Students only | enrol, course player, lessons, progress, video position, quizzes |
-| 5 | `/api/t/acme/admin` | POST | Admin | dashboard, course reviews, teacher applications, users, certificates, audit log |
-| 6 | `/api/t/acme/upload` | POST (form-data) | signed in | upload photos, thumbnails, lesson files and videos |
-| 7 | `/api/t/acme/files/:id` | GET | public / signed link | download an uploaded file |
-| 8 | `/api/t/acme/certificates/:code` | GET | anyone | verify a certificate; `?format=pdf` downloads it |
+| 1 | `/api/acme/auth` | POST | anyone | sign-up, sign-in, 2FA, Google, sign-out, email verification, password reset |
+| 2 | `/api/acme/account` | POST | signed in | profile, password, authenticator app, notifications, teacher application, learner dashboard |
+| 3 | `/api/acme/courses` | POST | anyone / Teacher / Admin | catalogue, course page, preview; course authoring and publishing; learners; quiz resets |
+| 4 | `/api/acme/learn` | POST | Students only | enrol, course player, lessons, progress, video position, quizzes |
+| 5 | `/api/acme/admin` | POST | Admin | dashboard, course reviews, teacher applications, users, certificates, audit log |
+| 6 | `/api/acme/upload` | POST (form-data) | signed in | upload photos, thumbnails, lesson files and videos |
+| 7 | `/api/acme/files/:id` | GET | public / signed link | download an uploaded file |
+| 8 | `/api/acme/certificates/:code` | GET | anyone | verify a certificate; `?format=pdf` downloads it |
 | 9 | `/api/organisations` | POST | anyone | an organisation registers itself (section 10) |
 | 10 | `/api/platform` | POST | platform super admin | organisations, cross-organisation people and audit log, super admin sign-in |
 | – | `/api/health` | GET | anyone | is the API running (and the database answering) |
@@ -26,7 +26,7 @@ The 8 organisation endpoints (plus a health check). Five of them take an **actio
 
 For the five action endpoints (1–5), every request looks the same:
 
-1. Set the method to **POST** and the URL to, for example, `http://localhost:4000/api/t/acme/auth`.
+1. Set the method to **POST** and the URL to, for example, `http://localhost:4000/api/acme/auth`.
 2. On the **Headers** tab, add `Content-Type: application/json`. Postman adds this itself when you pick JSON in step 4.
 3. On the **Body** tab, choose **raw**.
 4. In the dropdown on the right, choose **JSON**.
@@ -68,7 +68,7 @@ Demo accounts (after `npm run seed:demo`), all with password `Password123`: in `
 
 ---
 
-## 1. `/api/t/acme/auth`: sign-up and sign-in
+## 1. `/api/acme/auth`: sign-up and sign-in
 
 | Action | Body `data` | Expect | Also test |
 |---|---|---|---|
@@ -87,7 +87,7 @@ Demo accounts (after `npm run seed:demo`), all with password `Password123`: in `
 
 The token for `verifyEmail` / `resetPassword` is the part after `token=` in the link printed in the backend terminal.
 
-## 2. `/api/t/acme/account`: your account (sign in first)
+## 2. `/api/acme/account`: your account (sign in first)
 
 | Action | Body `data` | Expect | Also test |
 |---|---|---|---|
@@ -102,7 +102,7 @@ The token for `verifyEmail` / `resetPassword` is the part after `token=` in the 
 | `myApplications` | `{}` | 200, your applications and their decisions | |
 | `dashboard` | `{}` | 200, your courses with progress, resume point and certificate (Students only) | Teacher or Admin → 403 |
 
-## 3. `/api/t/acme/courses`: catalogue and course authoring
+## 3. `/api/acme/courses`: catalogue and course authoring
 
 **Public (no sign-in needed)**
 
@@ -163,7 +163,7 @@ The token for `verifyEmail` / `resetPassword` is the part after `token=` in the 
 
 For a file lesson, upload the file first (endpoint 6, purpose `lesson_file`), then use `{ "id": "f1", "kind": "lesson", "title": "Notes", "type": "file", "fileId": "<file id>" }`.
 
-## 4. `/api/t/acme/learn`: taking a course (Students only)
+## 4. `/api/acme/learn`: taking a course (Students only)
 
 Only Student accounts can enrol and learn, so only Students earn certificates. A Teacher or Admin calling these actions gets **403** (`enrol` returns code `STUDENTS_ONLY`).
 
@@ -184,7 +184,7 @@ Only Student accounts can enrol and learn, so only Students earn certificates. A
 3. As the Teacher or Admin, run `courses` → `resetAttempts`. The student gets 3 attempts again.
 4. `{ "a": ["x"], "b": ["true"], "c": ["m"] }` scores 66.67%: below the 70% pass mark, because multi-select answers must be exactly right.
 
-## 5. `/api/t/acme/admin`: administration (sign in as Admin with 2FA)
+## 5. `/api/acme/admin`: administration (sign in as Admin with 2FA)
 
 | Action | Body `data` | Expect | Also test |
 |---|---|---|---|
@@ -228,11 +228,11 @@ The `users` search also matches member IDs, e.g. `{ "q": "ACME-000003" }`.
 - `auth.studentMfa: true` gives Students the same two-step sign-in as Admins.
 - `branding.logoFileId` comes from uploading with `purpose: logo`.
 
-**Accepting an invitation:** the invitee opens the link, or in Postman sends `resetPassword` to `/api/t/acme/auth` with the `token` from the link and a new `password`. Their email is marked verified.
+**Accepting an invitation:** the invitee opens the link, or in Postman sends `resetPassword` to `/api/acme/auth` with the `token` from the link and a new `password`. Their email is marked verified.
 
-## 6. `POST /api/t/acme/upload`: files (sign in first)
+## 6. `POST /api/acme/upload`: files (sign in first)
 
-In Postman: **POST** `http://localhost:4000/api/t/acme/upload`, **Body** → **form-data**, with two rows:
+In Postman: **POST** `http://localhost:4000/api/acme/upload`, **Body** → **form-data**, with two rows:
 
 | Key | Type | Value |
 |---|---|---|
@@ -250,16 +250,16 @@ Remove any `Content-Type` header you added yourself; Postman sets the right one 
 
 Also test: a student uploading a `lesson_file` → 403; an `.exe` → 400.
 
-## 7. `GET /api/t/acme/files/:id`: download a file
+## 7. `GET /api/acme/files/:id`: download a file
 
-- **Photos and thumbnails** are public: `GET http://localhost:4000/api/t/acme/files/<file id>` → 200.
+- **Photos and thumbnails** are public: `GET http://localhost:4000/api/acme/files/<file id>` → 200.
 - **Lesson files and videos** are private. Without a valid link → **403**. The working link comes from `learn` → `lesson` (`lesson.fileUrl`), and only for an enrolled learner. It looks like `/api/files/<id>?exp=...&sig=...` and expires after 4 hours. Add `&download` to save the file instead of opening it.
 
-## 8. `GET /api/t/acme/certificates/:code`: verify a certificate (public)
+## 8. `GET /api/acme/certificates/:code`: verify a certificate (public)
 
 | Request | Expect |
 |---|---|
-| `GET http://localhost:4000/api/t/acme/certificates/EL-ABCD-2345-WXYZ` | 200; `valid` true or false, name, course, teacher, dates; revoke reason if revoked |
+| `GET http://localhost:4000/api/acme/certificates/EL-ABCD-2345-WXYZ` | 200; `valid` true or false, name, course, teacher, dates; revoke reason if revoked |
 | same with `?format=pdf` | 200, the PDF. In Postman, choose **Send and Download** to save it. |
 | a revoked certificate with `?format=pdf` | 410 |
 | an unknown code | 404 |
@@ -286,9 +286,9 @@ Same `{ "action", "data" }` shape, at `http://localhost:4000/api/platform`. Only
 **Inside an organisation:** a signed-in super admin can also call that organisation's `/admin` and `/courses` actions, acting as its Admin. Those calls are audited as `superadmin`, and AD-04 still applies. They have no personal account there, so `/account` returns 403.
 
 **Isolation checks to try:**
-- Sign in to `acme` as a student, then call `/api/t/globex/account` `dashboard` → 401: the session belongs to acme only.
-- `/api/t/globex/courses` `detail` with an acme course ID → 404.
-- `GET /api/t/globex/certificates/<acme code>` → 404.
+- Sign in to `acme` as a student, then call `/api/globex/account` `dashboard` → 401: the session belongs to acme only.
+- `/api/globex/courses` `detail` with an acme course ID → 404.
+- `GET /api/globex/certificates/<acme code>` → 404.
 
 ## 10. `POST /api/organisations`: an organisation registers itself (public)
 
@@ -300,7 +300,29 @@ Same `{ "action", "data" }` shape, at `http://localhost:4000/api/organisations`.
 | `checkAddress` | `{ "slug": "delta" }` | 200; `{ "available": true }` | `"acme"` → `available: false` with a reason; `"platform"` → reserved |
 | `register` | `{ "organisationName": "Delta School", "slug": "delta", "name": "Dami Ade", "email": "dami@delta.example.com", "password": "Password123!" }` | 200; `organisation.url` = `/delta`, `admin.memberCode` = `DELTA-000001`. A verification email goes to Dami, and a "New organisation registered" email to the super admin | Web address taken → 409. Reserved (`platform`, `api`, `admin`…) → 400. Weak password → 400. `ORG_SIGNUP=closed` → 403 `ORG_SIGNUP_CLOSED`. More than `ORG_SIGNUP_PER_HOUR` registrations from one network in an hour → 429 |
 
-Then sign in as Dami at `POST /api/t/delta/auth` `login` (two steps, like any Admin) and use `/api/t/delta/admin` as usual.
+Then sign in as Dami at `POST /api/delta/auth` `login` (two steps, like any Admin) and use `/api/delta/admin` as usual.
+
+## 11. `/api/acme/payments`: course payments (Paystack)
+
+| Action | Who | Data | Result |
+|---|---|---|---|
+| `account` | Admin | none | `connected`, the public key, a hint of the secret key (`sk_test_…bbbb`, never the key itself), `currency`, `webhookUrl` |
+| `saveAccount` | Admin | `{ "publicKey": "pk_test_…", "secretKey": "sk_test_…" }` | 200. Wrong format, or one test and one live key → 400 |
+| `removeAccount` | Admin | none | 200 |
+| `checkout` | Student (verified email) | `{ "courseId": "<id>" }` | `{ authorizationUrl, reference }`: send the learner to `authorizationUrl` (Paystack). Course without a price → 409 `NOT_PRICED`; already has access → 409 `ALREADY_ENROLLED`; Paystack not set up → 409 `PAYMENTS_NOT_SET_UP` |
+| `verify` | Student who started the payment | `{ "reference": "ACME-…" }` | `{ payment: { status: "success" \| "pending" \| "failed", … }, courseId }`. On success the learner is enrolled. Someone else's reference → 404 |
+| `mine` | Student | none | the learner's successful payments (receipts) |
+| `list` | Admin | `{ "status": "success" \| "pending" \| "failed" \| "", "page": 1 }` | payments with learner and course, plus totals |
+
+`POST /api/acme/payments/webhook` is called by **Paystack**, not by people: it must carry a valid `x-paystack-signature` (HMAC-SHA512 of the body with the organisation's secret key), otherwise 401. `charge.success` gives the learner access.
+
+Related changes:
+- **Every course is paid.** `learn` `enrol` no longer enrols: it returns `alreadyEnrolled: true` for a learner who paid, otherwise 402 `PAYMENT_REQUIRED` (pay with `payments` `checkout`), or 409 `NOT_PRICED` if the course has no price.
+- `courses` `updateMeta` takes `suggestedPrice` (the teacher's suggestion, e.g. `15000` = ₦15,000). `submit` refuses a course with no suggested price.
+- `courses` `setPrice` (Admin): `{ "id": "<course id>", "price": 15000 }`. The price must be above 0.
+- `admin` `approveCourse` takes an optional `price`; it defaults to the current price, else the teacher's suggestion. No price → 400 `PRICE_REQUIRED`.
+- `courses` `publish` refuses a course with no price (409 `PRICE_REQUIRED`). The catalogue only lists priced courses.
+- Courses now include `price`, `suggestedPrice` (both in kobo) and `currency`.
 
 ## Health check
 
@@ -318,7 +340,7 @@ To show the whole flow by hand, send these in order. Steps 2–5 build the cours
 4. **Teacher:** `courses/get` (see the reason) → `courses/submit` → `auth/logout`
 5. **Admin:** `admin/reviewQueue` → `admin/approveCourse` → `courses/publish` → `admin/users` → `admin/changeRole` → `admin/audit` → `auth/logout`
 6. **Student** (`auth/login`): `learn/enrol` → `learn/player` → `learn/completeLesson` (l1) → `learn/savePosition` for l2 a few times as the video plays (it completes itself) → `learn/submitQuiz` (correct answers) → `account/dashboard` → `auth/logout`
-7. **Anyone:** `GET /api/t/acme/certificates/<code>` and `?format=pdf`
+7. **Anyone:** `GET /api/acme/certificates/<code>` and `?format=pdf`
 8. **Admin:** `admin/certificates` → `admin/revokeCertificate` → verify the certificate again (now `valid: false`)
 
 The Postman collection in `postman/` is this same flow, with 101 requests that check every result automatically. Import it and choose **Run collection** (see TESTING.md).

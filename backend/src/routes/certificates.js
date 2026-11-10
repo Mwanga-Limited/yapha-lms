@@ -5,7 +5,7 @@ import { fail } from '../lib/errors.js';
 import { certificatePdf } from '../lib/learning.js';
 import { currentTenant, settingsOf } from '../lib/tenant.js';
 
-/** GET /api/t/:tenant/certificates/:code — public verification inside the issuing organisation.
+/** GET /api/:tenant/certificates/:code — public verification inside the issuing organisation.
  *  ?format=pdf downloads the certificate. Codes from another organisation are not found. */
 export async function certificateHandler(req, res) {
   const code = String(req.params.code).toUpperCase().trim();

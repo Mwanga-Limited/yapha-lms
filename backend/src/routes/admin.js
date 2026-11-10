@@ -9,7 +9,8 @@ import { notify } from '../lib/notify.js';
 import { publicUser } from '../lib/security.js';
 import { currentTenant, emailAllowed, publicTenant, settingsOf, settingsSchema } from '../lib/tenant.js';
 import { issueUserToken } from '../lib/tokens.js';
-import { courseMeta } from './courses.js';
+import { courseMeta, priceSchema } from './courses.js';
+import { toMinor } from '../lib/money.js';
 
 const ADMIN = ['admin'];
 const PAGE = 25;
@@ -90,7 +91,8 @@ export const adminRoutes = actionEndpoint({
 
   approveCourse: {
     auth: ADMIN,
-    schema: z.object({ versionId: id, note: str(2000).default('') }),
+    // price: what learners pay (every course is paid). Defaults to the current price, else the teacher's suggestion.
+    schema: z.object({ versionId: id, note: str(2000).default(''), price: priceSchema.optional() }),
     run: async (ctx) => tx(async (db) => {
       const { rows: [v] } = await db.query(`SELECT * FROM course_versions WHERE id = $1 FOR UPDATE`, [ctx.data.versionId]);
       if (!v) notFound('Version');
@@ -101,10 +103,12 @@ export const adminRoutes = actionEndpoint({
       await db.query(`UPDATE course_versions SET status = 'approved', reviewed_at = now(), reviewed_by = $2, updated_at = now() WHERE id = $1`, [v.id, ctx.user.id]);
       // A revision replaces the live version; the course keeps its published/unpublished state.
       const newStatus = isRevision ? c.status : 'approved';
-      await db.query(`UPDATE courses SET live_version_id = $2, draft_version_id = NULL, status = $3, updated_at = now() WHERE id = $1`, [c.id, v.id, newStatus]);
+      const price = ctx.data.price !== undefined ? toMinor(ctx.data.price) : (c.price_minor > 0 ? c.price_minor : c.suggested_price_minor);
+      if (!(price > 0)) fail(400, 'Set a price for this course: every course is paid', { code: 'PRICE_REQUIRED' });
+      await db.query(`UPDATE courses SET live_version_id = $2, draft_version_id = NULL, status = $3, price_minor = $4, updated_at = now() WHERE id = $1`, [c.id, v.id, newStatus, price]);
       await db.query(`INSERT INTO course_reviews (course_id, version_id, version_no, admin_id, decision, reason) VALUES ($1,$2,$3,$4,'approved', nullif($5, ''))`,
         [c.id, v.id, v.version_no, ctx.user.id, ctx.data.note]);
-      await audit(db, ctx, { action: 'course.approve', targetType: 'course', targetId: c.id, oldValues: { status: c.status }, newValues: { status: newStatus, versionNo: v.version_no, revision: isRevision } });
+      await audit(db, ctx, { action: 'course.approve', targetType: 'course', targetId: c.id, oldValues: { status: c.status }, newValues: { status: newStatus, versionNo: v.version_no, revision: isRevision, price } });
       await notify(db, c.teacher_id, { type: 'course', title: `Approved: ${c.title}`, body: isRevision ? 'Your changes are now live.' : 'You can now publish it.', link: `/teach/courses/${c.id}` });
       const { rows: [t] } = await db.query(`SELECT * FROM users WHERE id = $1`, [c.teacher_id]);
       ctx.after(() => emails.courseDecision(t, { ...c, live: isRevision }, true));

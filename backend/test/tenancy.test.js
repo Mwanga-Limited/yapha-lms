@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import {
   OTHER_TENANT, ROOT, SUPER, TENANT, agent, api, auditCount, call, callIn, codeFromMail, correctAnswers, loginPrivileged,
   config, loginRoot, loginSuper, makeTeacher, outbox, pool, watchVideo, publishedCourse, registerStudent, resetDb, tenantId, tokenFromMail,
+  buy,
 } from './helpers.js';
 
 const A = TENANT;        // "alpha"
@@ -53,6 +54,20 @@ describe('Organisations and member IDs', () => {
   });
 });
 
+describe('API addresses', () => {
+  test("an organisation's API is at /api/<organisation>; the platform's own routes still work; old /api/t/ addresses are gone", async () => {
+    const me = await agent().post(`/api/${A}/auth`).send({ action: 'me' }).expect(200);
+    assert.equal(me.body.tenant.slug, A);
+    await agent().get('/api/health').expect(200);
+    await agent().post('/api/organisations').send({ action: 'checkAddress', data: { slug: 'gamma' } }).expect(200);
+    await agent().post('/api/platform').send({ action: 'me' }).expect((r) => assert.notEqual(r.status, 404));
+    const old = await agent().post(`/api/t/${A}/auth`).send({ action: 'me' }).expect(404);
+    assert.ok(!old.body.tenant);
+    const none = await agent().post('/api/no-such-org/auth').send({ action: 'me' }).expect(404);
+    assert.equal(none.body.code, 'TENANT_NOT_FOUND');
+  });
+});
+
 describe('Isolation between organisations', () => {
   test('a session from one organisation is not accepted by another', async () => {
     const s = await registerStudent('Session Hopper', { slug: A });
@@ -88,7 +103,7 @@ describe('Isolation between organisations', () => {
 
   test('certificates and files of one organisation cannot be fetched through another', async () => {
     const s = await registerStudent('Alpha Graduate', { slug: A });
-    await callIn(A, s.a, 'learn', 'enrol', { courseId: courseA }).expect(200);
+    await buy(s, courseA, A);
     await callIn(A, s.a, 'learn', 'completeLesson', { courseId: courseA, lessonId: 'l1' });
     await watchVideo(s, courseA, 'l2', { slug: A });
     const r = await callIn(A, s.a, 'learn', 'submitQuiz', { courseId: courseA, quizId: 'q1', answers: correctAnswers }).expect(200);
@@ -99,7 +114,7 @@ describe('Isolation between organisations', () => {
     await agent().get(`${api('certificates', B)}/${code}`).expect(404);
 
     const up = await rootA.post(api('upload', A)).field('purpose', 'logo').attach('file', Buffer.from([0x89, 0x50, 0x4e, 0x47]), { filename: 'logo.png', contentType: 'image/png' }).expect(200);
-    assert.ok(up.body.file.url.startsWith(`/api/t/${A}/files/`));
+    assert.ok(up.body.file.url.startsWith(`/api/${A}/files/`));
     await agent().get(`${api('files', B)}/${up.body.file.id}`).expect(404);
   });
 
@@ -134,7 +149,7 @@ describe('Per-organisation configuration', () => {
     await settings(B, rootB, { quiz: { passMark: 60, maxAttempts: 1, lockHours: 2 } });
     const twoOfThree = { a: ['x'], b: ['true'], c: ['m'] };     // 66.67%
     const sB = await registerStudent('Beta Quizzer', { slug: B });
-    await callIn(B, sB.a, 'learn', 'enrol', { courseId: courseB }).expect(200);
+    await buy(sB, courseB, B);
     const q = (await callIn(B, sB.a, 'learn', 'quiz', { courseId: courseB, quizId: 'q1' })).body.state;
     assert.equal(q.passMark, 60);
     assert.equal(q.maxAttempts, 1);
@@ -142,13 +157,13 @@ describe('Per-organisation configuration', () => {
     assert.equal(pass.body.result.passed, true);                // 66.67% passes at 60%
 
     const sA = await registerStudent('Alpha Quizzer', { slug: A });
-    await callIn(A, sA.a, 'learn', 'enrol', { courseId: courseA }).expect(200);
+    await buy(sA, courseA, A);
     const fail = await callIn(A, sA.a, 'learn', 'submitQuiz', { courseId: courseA, quizId: 'q1', answers: twoOfThree }).expect(200);
     assert.equal(fail.body.result.passed, false);              // ...but not at Alpha's default 70%
     assert.equal(fail.body.state.attemptsLeft, 2);
 
     const sB2 = await registerStudent('Beta Locked', { slug: B });
-    await callIn(B, sB2.a, 'learn', 'enrol', { courseId: courseB }).expect(200);
+    await buy(sB2, courseB, B);
     const locked = await callIn(B, sB2.a, 'learn', 'submitQuiz', { courseId: courseB, quizId: 'q1', answers: { a: ['y'], b: ['false'], c: ['n'] } }).expect(200);
     const hours = (new Date(locked.body.state.lockedUntil) - Date.now()) / 3600e3;
     assert.ok(hours > 1.9 && hours <= 2, 'locked after 1 attempt for 2 hours');

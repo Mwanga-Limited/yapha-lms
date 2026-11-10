@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { api, type TenantInfo, type TenantSettings } from '../../api';
+import { CURRENCIES, api, type Currency, type TenantInfo, type TenantSettings } from '../../api';
 import { useAuth } from '../../auth';
+import { PaymentSettings } from '../../components/PaymentSettings';
 import { SettingsForm } from '../../components/SettingsForm';
-import { Button, ErrorState, Field, Loading, fmtDate, useAction, useDocumentTitle, useLoad } from '../../ui';
+import { Button, ErrorState, Field, Loading, Select, fmtDate, useAction, useDocumentTitle, useLoad } from '../../ui';
 import { AdminNav } from './Dashboard';
 
 interface SettingsData { tenant: TenantInfo; settings: TenantSettings; name: string; slug: string; id: string; createdAt: string; counts: { members: number; published_courses: number } }
@@ -41,6 +42,15 @@ export function AdminSettings() {
         <Field label="Organisation name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} required />
         <SettingsForm value={draft} onChange={setDraft} logoPreviewUrl={data.tenant.branding.logoUrl} canUploadLogo />
       </div>
+      <section className="panel" id="payments">
+        <h2>Payments</h2>
+        <p className="muted">Learners pay for courses through your organisation's Paystack account. Course prices are set on each course.</p>
+        <Select label="Currency" hint="Course prices are shown and charged in this currency. Your Paystack account must accept it."
+          value={draft.payments?.currency ?? 'NGN'} onChange={(e) => setDraft({ ...draft, payments: { currency: e.target.value as Currency } })}>
+          {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </Select>
+        <PaymentSettings />
+      </section>
       <div className={`savebar ${dirty ? 'dirty' : ''}`}>
         <span>{dirty ? 'You have unsaved changes' : 'All changes saved'}</span>
         <Button busy={busy} disabled={!dirty || !name.trim()} onClick={save}>Save settings</Button>

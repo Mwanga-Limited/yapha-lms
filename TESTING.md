@@ -38,7 +38,7 @@ For safety, the tests refuse to run if this points at the main database, or if t
 
 ```powershell
 cd backend
-npm test               # 50 tests, expect: pass 50, fail 0
+npm test               # 76 tests, expect: pass 76, fail 0
 npm run test:coverage  # same tests plus a coverage table (about 92% of lines)
 ```
 
@@ -46,11 +46,20 @@ npm run test:coverage  # same tests plus a coverage table (about 92% of lines)
 
 ```powershell
 cd frontend
-npm test               # 21 tests, expect: Tests 21 passed
+npm test               # 38 tests, expect: Tests 38 passed
 ```
 
 What runs in the backend:
 
+- `test/payments.test.js` covers **course payments** against the Paystack test server (`test/paystack-test-server.js`, a local copy of the Paystack API), so no internet or real money is needed:
+  - only Admins manage the Paystack keys; the secret key is stored encrypted and never returned or written to the audit log
+  - the teacher suggests a price; the Admin sets it on approval or later; teachers can't
+  - a paid course can't be enrolled in or opened without paying (402 `PAYMENT_REQUIRED`)
+  - checkout charges the exact price and currency; a successful payment gives full access, a receipt email, and can't be bought twice
+  - declined, abandoned, underpaid and wrong-currency payments give no access
+  - nobody can use someone else's payment reference
+  - the Paystack webhook gives access when the learner never comes back; unsigned or wrongly signed webhooks are refused; repeats change nothing
+  - each organisation uses its own keys and sees only its own payments (also checked at database level)
 - `test/rules.test.js` covers authentication, rate limiting, password reset, 2FA, role checks, every AD/CR/EN/QZ/CC rule, the audit log and notifications, and **video lessons** ("Video lessons complete only when watched"):
   - a video can't be marked complete by hand (409 `WATCH_VIDEO`); text lessons still can
   - skipping ahead to the end doesn't count as watching
@@ -158,7 +167,7 @@ The collection is safe to run repeatedly. Each run creates its own new organisat
 
 ### API shape, for reference
 
-Every call except the GET routes is `POST /api/t/<organisation>/<endpoint>` with a JSON body `{ "action": "...", "data": { ... } }`. The super admin uses `POST /api/platform`.
+Every call except the GET routes is `POST /api/<organisation>/<endpoint>` with a JSON body `{ "action": "...", "data": { ... } }`. The super admin uses `POST /api/platform`.
 
 Each organisation has 8 endpoints: `auth`, `account`, `courses`, `learn`, `admin`, plus `upload` (multipart), `GET files/:id` and `GET certificates/:code`. The session is an httpOnly cookie, which Postman stores automatically. README.md lists every action.
 
@@ -177,12 +186,12 @@ Use **http://localhost:5173/acme** for sections A–D. Demo accounts there: `adm
 | A1 | Open http://localhost:5173 | Catalogue with the demo course. Search, category and level filters work. |
 | A2 | Open the course | Outline, "What you'll learn", teacher profile. "Preview" opens the free lesson in a dialog. |
 | A3 | **Create account** as "Learn" | Signed in. A yellow banner asks you to verify your email. |
-| A4 | Try **Enrol for free** | Button disabled, with "Verify your email to enrol" (EN-03) |
+| A4 | Try **Enrol for ₦5,000** | Button disabled, with "Verify your email to enrol" (EN-03) |
 | A5 | Open the verification link from the API terminal | "Your email is verified". The banner disappears. |
-| A6 | Enrol | The course player opens. Lessons on the left, highlighter progress bar at the top. |
+| A6 | **Enrol for ₦5,000** → pay on Paystack with a test card (Admin must have connected Paystack test keys) | "Payment successful" → **Start learning** opens the course player. Lessons on the left, highlighter progress bar at the top. |
 | A7 | Play the video, pause at ~5 s, go back to **My learning**, then **Resume course** | Resumes at the same lesson and the same video position |
 | A8 | **Mark as complete** on a **reading or file** lesson | Tick in the sidebar, progress bar moves, jumps to the next item |
-| A8a | Open a **video** lesson | No "Mark as complete" button. Under the video: a bar and "0% watched · watch at least 90% to complete this lesson". |
+| A8a | Open a **video** lesson | No "Mark as complete" button. Under the video: a bar and "Watch the video to complete this lesson", then "0% watched" once it starts. The 90% rule itself is not shown to learners. |
 | A8b | Play the video for a while, then pause | The bar and percentage go up as it plays. The lesson is not complete yet. |
 | A8c | Drag the video's slider to the very end | Not completed: the percentage barely moves, because skipping ahead doesn't count. |
 | A8d | Go back and watch the video through to the end | "✓ Completed" appears with a **Next: …** button, the sidebar ticks the lesson, and the course progress bar moves. No button was needed. |
@@ -298,7 +307,8 @@ Sign in with the `.env` Admin; 2FA is required.
 - **Google sign-in** needs a real `GOOGLE_CLIENT_ID`, so it is tested by hand only (see README.md).
 - **Real email delivery** needs SMTP settings. Locally, emails print in the API terminal.
 - **Video resume** tracks the exact position for uploaded and direct `.mp4` videos. YouTube and Vimeo embeds start from the saved position, but the position isn't tracked while they play.
-- **Payments, refunds and disputes** are Phase 2. Refund-triggered certificate revocation (CC-03, Phase 2) has its hook ready: `revokeCertificateForEnrollment`.
+- **Payments** are tested against the Paystack test server. Before going live, run one payment with your Paystack **test** keys and a Paystack test card, and set the webhook URL in Paystack. **Refunds and disputes** are not handled in the app yet (do them in the Paystack dashboard).
+- **Organisation subscriptions** (monthly/annual plans) are the next phase. Refund-triggered certificate revocation (CC-03, Phase 2) has its hook ready: `revokeCertificateForEnrollment`.
 
 ## 6. Start again with fresh data
 

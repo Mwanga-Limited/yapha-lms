@@ -1,4 +1,4 @@
-// Thin client for the backend's action endpoints: POST /api/t/<organisation>/<endpoint> { action, data },
+// Thin client for the backend's action endpoints: POST /api/<organisation>/<endpoint> { action, data },
 // and POST /api/platform { action, data } for the super admin console.
 
 /** Words that are the app's own pages, never an organisation's web address (same list as the backend's RESERVED_SLUGS). */
@@ -12,10 +12,10 @@ let tenantSlug: string | null = null;
 export const setTenantSlug = (slug: string | null) => { tenantSlug = slug; };
 export const getTenantSlug = () => tenantSlug;
 /** Build an API URL inside the current organisation, e.g. apiUrl('/certificates/EL-...'). */
-export const apiUrl = (path: string) => `/api/t/${tenantSlug}${path}`;
+export const apiUrl = (path: string) => `/api/${tenantSlug}${path}`;
 
 export type Role = 'student' | 'teacher' | 'admin' | 'superadmin';
-export type Endpoint = 'auth' | 'account' | 'courses' | 'learn' | 'admin';
+export type Endpoint = 'auth' | 'account' | 'courses' | 'learn' | 'admin' | 'payments';
 
 export interface User {
   id: string; email: string; name: string; phone: string | null; bio: string | null; expertise: string | null;
@@ -29,7 +29,10 @@ export interface TenantSettings {
   quiz: { passMark: number; maxAttempts: number; lockHours: number };
   access: { signup: 'open' | 'invite'; allowedDomains: string[] };
   auth: { google: boolean; studentMfa: boolean };
+  payments: { currency: Currency };
 }
+export const CURRENCIES = ['NGN', 'GHS', 'ZAR', 'KES', 'USD'] as const;
+export type Currency = typeof CURRENCIES[number];
 
 /** What every page of an organisation knows about it (public, no secrets). */
 export interface TenantInfo {
@@ -38,6 +41,7 @@ export interface TenantInfo {
   quiz: TenantSettings['quiz'];
   access: TenantSettings['access'];
   auth: TenantSettings['auth'];
+  payments?: TenantSettings['payments'];
 }
 
 export type CourseStatus = 'draft' | 'in_review' | 'rejected' | 'approved' | 'published' | 'unpublished' | 'archived';
@@ -49,6 +53,8 @@ export interface CourseMeta {
   id: string; title: string; summary: string; description: string; outline: string; category: string; level: Level;
   language: string; thumbnailFileId: string | null; thumbnailUrl: string | null; status: CourseStatus;
   publishedAt: string | null; createdAt: string; updatedAt: string; teacherId: string;
+  /** In the smallest unit (kobo…). price is what learners pay (set by the Admin; every course is paid, 0 = not priced yet); suggestedPrice is the teacher's suggestion. */
+  price: number; suggestedPrice: number; currency: Currency;
 }
 
 export interface QuizState {

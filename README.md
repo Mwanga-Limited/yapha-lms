@@ -13,7 +13,7 @@ One platform, many organisations (tenants). Each organisation (a school, company
 | Anyone without an address | `/` | "Find your organisation" (organisations are never listed publicly) |
 | A new organisation | `/register` | Registers itself; the person registering becomes its first Admin |
 
-Words the app uses for its own pages (`platform`, `register`, `api`, `admin`, `login` and a few more, listed in `RESERVED_SLUGS` in `backend/src/lib/tenant.js`) can't be an organisation's web address. Older links of the form `/t/<organisation>/...` are forwarded to `/<organisation>/...`. The API keeps its `/api/t/<organisation>/` prefix; only the page addresses changed.
+Words the app uses for its own pages (`platform`, `register`, `api`, `admin`, `login` and a few more, listed in `RESERVED_SLUGS` in `backend/src/lib/tenant.js`) can't be an organisation's web address. Older links of the form `/t/<organisation>/...` are forwarded to `/<organisation>/...`. The API keeps its `/api/<organisation>/` prefix; only the page addresses changed.
 
 ## What multitenancy adds
 
@@ -91,18 +91,18 @@ cd frontend && npm test         # 21 tests (Vitest + React Testing Library), no 
 
 ## API
 
-Each organisation has the same 8 endpoints under **`/api/t/<organisation>/`**, plus **`/api/organisations`** (public registration) and **`/api/platform`** (the super admin console). Every POST is `{ "action": "...", "data": {...} }`. **API.md** has every action with a ready-to-paste Postman body.
+Each organisation has the same 8 endpoints under **`/api/<organisation>/`**, plus **`/api/organisations`** (public registration) and **`/api/platform`** (the super admin console). Every POST is `{ "action": "...", "data": {...} }`. **API.md** has every action with a ready-to-paste Postman body.
 
 | Endpoint | Who | Actions |
 |---|---|---|
-| `POST /api/t/:org/auth` | public | `me` (includes the organisation's public settings), `register`, `login`, `verifyMfa`, `sendMfaEmail`, `google`, `logout`, `verifyEmail`, `resendVerification`, `requestPasswordReset`, `resetPassword` (also accepts invitation links) |
-| `POST /api/t/:org/account` | signed in | `updateProfile`, `changePassword`, `totpSetup`, `totpEnable`, `totpDisable`, `notifications`, `markNotificationsRead`, `applyTeacher`, `myApplications`, `dashboard` |
-| `POST /api/t/:org/courses` | public / Teacher / Admin | `catalog`, `detail`, `preview`, `mine`, `create`, `get`, `updateMeta`, `saveContent`, `startRevision`, `discardRevision`, `submit`, `publish`, `unpublish`, `archive`, `remove`, `learners`, `resetAttempts` |
-| `POST /api/t/:org/learn` | Students | `enrol`, `player`, `lesson`, `savePosition`, `completeLesson`, `quiz`, `submitQuiz` |
-| `POST /api/t/:org/admin` | Admin | `stats`, `reviewQueue`, `approveCourse`, `rejectCourse`, `courses`, `applications`, `decideApplication`, `users`, `changeRole`, `setActive`, `certificates`, `revokeCertificate`, `audit`, `auditCsv`, **`settings`**, **`updateSettings`**, **`inviteUser`** |
-| `POST /api/t/:org/upload` | signed in | multipart `purpose` (`photo`, `thumbnail`, `lesson_file`, `lesson_video`, `logo`) + `file` |
-| `GET /api/t/:org/files/:id` | public / signed URL | the organisation's files only |
-| `GET /api/t/:org/certificates/:code` | public | verification JSON (with member ID and issuer); `?format=pdf` returns the branded PDF |
+| `POST /api/:org/auth` | public | `me` (includes the organisation's public settings), `register`, `login`, `verifyMfa`, `sendMfaEmail`, `google`, `logout`, `verifyEmail`, `resendVerification`, `requestPasswordReset`, `resetPassword` (also accepts invitation links) |
+| `POST /api/:org/account` | signed in | `updateProfile`, `changePassword`, `totpSetup`, `totpEnable`, `totpDisable`, `notifications`, `markNotificationsRead`, `applyTeacher`, `myApplications`, `dashboard` |
+| `POST /api/:org/courses` | public / Teacher / Admin | `catalog`, `detail`, `preview`, `mine`, `create`, `get`, `updateMeta`, `saveContent`, `startRevision`, `discardRevision`, `submit`, `publish`, `unpublish`, `archive`, `remove`, `learners`, `resetAttempts` |
+| `POST /api/:org/learn` | Students | `enrol`, `player`, `lesson`, `savePosition`, `completeLesson`, `quiz`, `submitQuiz` |
+| `POST /api/:org/admin` | Admin | `stats`, `reviewQueue`, `approveCourse`, `rejectCourse`, `courses`, `applications`, `decideApplication`, `users`, `changeRole`, `setActive`, `certificates`, `revokeCertificate`, `audit`, `auditCsv`, **`settings`**, **`updateSettings`**, **`inviteUser`** |
+| `POST /api/:org/upload` | signed in | multipart `purpose` (`photo`, `thumbnail`, `lesson_file`, `lesson_video`, `logo`) + `file` |
+| `GET /api/:org/files/:id` | public / signed URL | the organisation's files only |
+| `GET /api/:org/certificates/:code` | public | verification JSON (with member ID and issuer); `?format=pdf` returns the branded PDF |
 | `POST /api/organisations` | public | `info` (is registration open), `checkAddress` (is a web address free), `register` (new organisation + its first Admin) |
 | `POST /api/platform` | super admin | `me`, `login`, `verifyMfa`, `sendMfaEmail`, `logout`, `changePassword`, `totpSetup`, `totpEnable`, `stats`, `tenants`, `tenant`, `updateTenant`, `addTenantAdmin`, `users`, `audit`, `auditCsv` |
 
@@ -139,6 +139,15 @@ All Phase 1 rules apply **within each organisation**:
 - Helmet with a strict Content Security Policy; JSON-only POSTs; zod validation; quiz answers never sent to learners.
 - **Production:** set `NODE_ENV=production`, a long random `JWT_SECRET`, `COOKIE_SECURE=true` behind HTTPS, and real SMTP. Ideally, connect as a database owner that is **not** a superuser; `npm run migrate` grants it membership of `elearning_app`.
 
+## Course payments (Paystack)
+
+- **Each organisation uses its own Paystack account.** An Admin enters the organisation's Paystack public and secret keys in **Admin › Settings › Payments**, and pastes the **webhook URL** shown there into Paystack (Settings › API Keys & Webhooks). Learners' money goes straight to that organisation's Paystack account.
+- **The secret key is encrypted** in the database (AES-256-GCM). Set `DATA_ENCRYPTION_KEY` in `backend/.env` to a long random value and never change it (changing it means every organisation must enter its keys again). It is required in production. Generate one with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+- **Every course is paid.** The teacher must suggest a price on the course's Details tab before submitting. The Admin sets the real price when approving the course (it defaults to the suggestion) and can change it at any time from the course page (**Admin › All courses › course › Price**). A price must be above 0. A course without a price (for example one published before payments existed) is hidden from the catalogue, can't be published again and can't be joined until an Admin sets a price; learners who already joined keep access. The currency (NGN by default) is an organisation setting.
+- **One payment gives full access** to the course, with no expiry. Learners who already have access keep it if the price changes later.
+- **How a payment works:** the learner clicks **Buy** → Paystack's checkout page → Paystack sends them back to `/<organisation>/payment`, where the server asks Paystack how the payment went. The webhook confirms it as well, so access is given even if the learner closes the page. Only a payment Paystack confirms, for the exact price and currency, gives access. Admins see payments in **Admin › Payments**; learners see their receipts on **My learning** and by email.
+- **Testing payments:** use Paystack **test** keys (`pk_test_…`, `sk_test_…`) and Paystack's test cards. No real money moves. Switch to live keys when ready.
+
 ## Google sign-in (optional)
 
 Set `GOOGLE_CLIENT_ID` in `backend/.env`. Each organisation can turn the button off in its settings. New Google accounts follow the organisation's joining rules.
@@ -152,7 +161,7 @@ backend/
   migrations/003_tenant_isolation.sql tenant_id everywhere, member IDs, row-level security, elearning_app role
   migrations/004_yapha.sql            the original organisation becomes Yapha at /yapha
   migrations/005_video_watch.sql      watched time per video lesson (videos complete only by watching)
-  src/app.js                          security headers, /api/t/:org and /api/platform, errors
+  src/app.js                          security headers, /api/:org and /api/platform, errors
   src/db.js                           per-request tenant scope (transaction + role + app.tenant_id)
   src/routes/index.js                 organisation resolution and request scoping
   src/routes/                         auth, account, courses, learn, admin, files, certificates, organisations (registration), platform

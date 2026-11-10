@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "E-Learning Platform API",
-    "description": "End-to-end walkthrough of every Phase 1 feature, in order. Every request has tests that check the business rule named in its title (AD-, CR-, EN-, QZ-, CC-).\n\nAll calls are `POST /api/<endpoint>` with `{ \"action\": \"...\", \"data\": {...} }`, except the GET routes for health, files and certificates.\nPostman keeps the session cookie, so each folder signs in as the role it needs and signs out at the end.\n\nOrganisation endpoints are under /api/t/{{tenant}}/...; the super admin console is POST /api/platform.\n**Before running:** start the API, run `npm run seed:superadmin` and `npm run seed:demo`, import the environment, and set superadminEmail/superadminPassword. The defaults use the demo organisations acme and globex.\n**2FA:** set adminTotpSecret and teacherTotpSecret to run unattended in the Collection Runner (see TESTING.md), or paste each emailed code from the API terminal into mfaCode.",
+    "description": "End-to-end walkthrough of every Phase 1 feature, in order. Every request has tests that check the business rule named in its title (AD-, CR-, EN-, QZ-, CC-).\n\nAll calls are `POST /api/<endpoint>` with `{ \"action\": \"...\", \"data\": {...} }`, except the GET routes for health, files and certificates.\nPostman keeps the session cookie, so each folder signs in as the role it needs and signs out at the end.\n\nOrganisation endpoints are under /api/{{tenant}}/...; the super admin console is POST /api/platform.\n**Before running:** start the API, run `npm run seed:superadmin` and `npm run seed:demo`, import the environment, and set superadminEmail/superadminPassword. The defaults use the demo organisations acme and globex.\n**2FA:** set adminTotpSecret and teacherTotpSecret to run unattended in the Collection Runner (see TESTING.md), or paste each emailed code from the API terminal into mfaCode.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -667,7 +667,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -714,7 +714,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -764,7 +764,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -809,7 +809,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -853,7 +853,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -897,7 +897,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -946,7 +946,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -992,7 +992,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1037,7 +1037,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1081,7 +1081,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1125,7 +1125,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1170,7 +1170,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/account",
+              "raw": "{{baseUrl}}/api/{{tenant}}/account",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1214,7 +1214,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1258,7 +1258,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1302,7 +1302,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1356,7 +1356,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1424,7 +1424,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1470,7 +1470,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1516,7 +1516,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1561,7 +1561,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1606,7 +1606,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1650,7 +1650,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1694,7 +1694,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1738,7 +1738,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1782,7 +1782,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1826,7 +1826,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1880,7 +1880,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1948,7 +1948,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1996,7 +1996,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2041,7 +2041,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2085,7 +2085,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2129,7 +2129,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2173,7 +2173,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2226,7 +2226,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2294,7 +2294,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2342,7 +2342,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2386,7 +2386,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2431,7 +2431,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/account",
+              "raw": "{{baseUrl}}/api/{{tenant}}/account",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2475,7 +2475,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2529,7 +2529,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2597,7 +2597,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2643,7 +2643,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2687,7 +2687,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2731,7 +2731,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2776,7 +2776,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2821,7 +2821,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2867,7 +2867,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2911,7 +2911,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -2955,7 +2955,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3002,7 +3002,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3046,7 +3046,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3090,7 +3090,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3135,7 +3135,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3179,7 +3179,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3223,7 +3223,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3267,7 +3267,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3311,7 +3311,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3355,7 +3355,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3402,7 +3402,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3447,7 +3447,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3492,7 +3492,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3536,7 +3536,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3587,7 +3587,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3632,7 +3632,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3677,7 +3677,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3722,7 +3722,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3767,7 +3767,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3811,7 +3811,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3856,7 +3856,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3901,7 +3901,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3948,7 +3948,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -3993,7 +3993,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4038,7 +4038,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4083,7 +4083,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4128,7 +4128,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4172,7 +4172,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4225,7 +4225,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4293,7 +4293,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4341,7 +4341,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4385,7 +4385,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4429,7 +4429,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4479,7 +4479,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4524,7 +4524,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4571,7 +4571,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4616,7 +4616,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4662,7 +4662,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4707,7 +4707,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4751,7 +4751,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4805,7 +4805,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4863,7 +4863,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4908,7 +4908,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{tenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4953,7 +4953,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/account",
+              "raw": "{{baseUrl}}/api/{{tenant}}/account",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -4997,7 +4997,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5028,7 +5028,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/certificates/{{certCode}}",
+              "raw": "{{baseUrl}}/api/{{tenant}}/certificates/{{certCode}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5061,7 +5061,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/certificates/{{certCode}}?format=pdf",
+              "raw": "{{baseUrl}}/api/{{tenant}}/certificates/{{certCode}}?format=pdf",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5123,7 +5123,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5191,7 +5191,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5237,7 +5237,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5281,7 +5281,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5325,7 +5325,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/admin",
+              "raw": "{{baseUrl}}/api/{{tenant}}/admin",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5369,7 +5369,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5413,7 +5413,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{tenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5457,7 +5457,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5488,7 +5488,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/certificates/{{certCode}}",
+              "raw": "{{baseUrl}}/api/{{tenant}}/certificates/{{certCode}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5519,7 +5519,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/certificates/{{certCode}}?format=pdf",
+              "raw": "{{baseUrl}}/api/{{tenant}}/certificates/{{certCode}}?format=pdf",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5576,7 +5576,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5620,7 +5620,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{otherTenant}}/account",
+              "raw": "{{baseUrl}}/api/{{otherTenant}}/account",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5665,7 +5665,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{otherTenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{otherTenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5709,7 +5709,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{otherTenant}}/courses",
+              "raw": "{{baseUrl}}/api/{{otherTenant}}/courses",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5753,7 +5753,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{otherTenant}}/learn",
+              "raw": "{{baseUrl}}/api/{{otherTenant}}/learn",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5797,7 +5797,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{tenant}}/auth",
+              "raw": "{{baseUrl}}/api/{{tenant}}/auth",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5827,7 +5827,7 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/t/{{otherTenant}}/certificates/{{certCode}}",
+              "raw": "{{baseUrl}}/api/{{otherTenant}}/certificates/{{certCode}}",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -5873,7 +5873,7 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/t/no-such-org/auth",
+              "raw": "{{baseUrl}}/api/no-such-org/auth",
               "host": [
                 "{{baseUrl}}"
               ],

@@ -4,7 +4,7 @@ import type { LessonPayload } from '../api';
 import { LessonView } from '../components/LessonView';
 
 const videoLesson = (over: Partial<LessonPayload> = {}): LessonPayload => ({
-  id: 'l2', title: 'Watch this', type: 'video', body: '', videoUrl: null, fileUrl: '/api/t/acme/files/v1?exp=1&sig=x', fileName: 'intro.mp4', durationMin: 1, ...over,
+  id: 'l2', title: 'Watch this', type: 'video', body: '', videoUrl: null, fileUrl: '/api/acme/files/v1?exp=1&sig=x', fileName: 'intro.mp4', durationMin: 1, ...over,
 });
 
 /** jsdom has no media engine: set the time and length the browser would report. */
@@ -110,7 +110,7 @@ describe('other lessons', () => {
     expect(container.querySelector('video')).toBeNull();
   });
   test('a file lesson offers a download', () => {
-    render(<LessonView lesson={{ id: 'l3', title: 'Worksheet', type: 'file', body: '', videoUrl: null, fileUrl: '/api/t/acme/files/f1?exp=1&sig=x', fileName: 'sheet.pdf', durationMin: null }} />);
+    render(<LessonView lesson={{ id: 'l3', title: 'Worksheet', type: 'file', body: '', videoUrl: null, fileUrl: '/api/acme/files/f1?exp=1&sig=x', fileName: 'sheet.pdf', durationMin: null }} />);
     expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute('href', expect.stringContaining('&download'));
   });
 });

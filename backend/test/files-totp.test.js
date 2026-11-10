@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { authenticator } from 'otplib';
 import { agent, api, call, loginRoot, makeTeacher, pool, registerStudent, resetDb, sampleContent,
+  buy,
 } from './helpers.js';
 
 let root;
@@ -33,7 +34,7 @@ test('private lesson files need a signed URL from an enrolled session', async ()
   const content = sampleContent();
   content.sections[0].items.push({ id: 'f1', kind: 'lesson', title: 'Notes', type: 'file', fileId });
   const { body: { id } } = await call(t.a, 'courses', 'create', { title: 'With files' });
-  await call(t.a, 'courses', 'updateMeta', { id, title: 'With files', summary: 's', category: 'c', outline: 'o' }).expect(200);
+  await call(t.a, 'courses', 'updateMeta', { id, title: 'With files', summary: 's', category: 'c', outline: 'o', suggestedPrice: 5000 }).expect(200);
   const saved = await call(t.a, 'courses', 'saveContent', { id, content }).expect(200);
   assert.equal(saved.body.content.sections[0].items[3].fileName, 'notes.pdf');
   await call(t.a, 'courses', 'submit', { id }).expect(200);
@@ -42,7 +43,7 @@ test('private lesson files need a signed URL from an enrolled session', async ()
   await call(t.a, 'courses', 'publish', { id }).expect(200);
 
   await agent().get(`${api('files')}/${fileId}`).expect(403);
-  await call(s.a, 'learn', 'enrol', { courseId: id }).expect(200);
+  await buy(s, id);
   const l = (await call(s.a, 'learn', 'lesson', { courseId: id, lessonId: 'f1' }).expect(200)).body.lesson;
   assert.match(l.fileUrl, /sig=/);
   const f = await agent().get(l.fileUrl).expect(200);

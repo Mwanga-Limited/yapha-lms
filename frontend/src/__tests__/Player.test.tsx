@@ -18,7 +18,7 @@ const outline = [{
 const player = { course: { id: 'c1', title: 'Video Course', teacherName: 'Tunde', status: 'published' }, outline, progress: { total: 3, done: 0, percent: 0 }, resumeItemId: null, completedAt: null, certificate: null };
 const lessons: Record<string, unknown> = {
   l1: { lesson: { id: 'l1', title: 'Welcome', type: 'text', body: 'Hello.', videoUrl: null, fileUrl: null, fileName: null, durationMin: 2 }, completed: false, positionSec: 0, watch: null },
-  l2: { lesson: { id: 'l2', title: 'Watch this', type: 'video', body: '', videoUrl: null, fileUrl: '/api/t/acme/files/v?exp=1&sig=x', fileName: 'v.mp4', durationMin: 1 }, completed: false, positionSec: 0,
+  l2: { lesson: { id: 'l2', title: 'Watch this', type: 'video', body: '', videoUrl: null, fileUrl: '/api/acme/files/v?exp=1&sig=x', fileName: 'v.mp4', durationMin: 1 }, completed: false, positionSec: 0,
     watch: { watchedSec: 0, durationSec: 0, percent: 0, requiredPercent: 90 } },
 };
 
