@@ -30,7 +30,7 @@ function quizStateView(s) {
   const passed = !!s?.passed_at;
   return {
     attemptsUsed: used, attemptsLeft: passed ? 0 : Math.max(0, quizRules().maxAttempts - used), maxAttempts: quizRules().maxAttempts, passMark: quizRules().passMark,
-    lockedUntil: lockedUntil ? lockedUntil.toISOString() : null, passed, bestScore: s?.best_score ?? null,
+    lockedUntil: lockedUntil ? lockedUntil.toISOString() : null, passed, score: s?.last_score ?? null,
   };
 }
 
@@ -237,7 +237,7 @@ export const learnRoutes = actionEndpoint({
       const lockedUntil = !g.passed && used >= maxAttempts ? new Date(now.getTime() + lockHours * 3600 * 1000) : null;
       const { rows: [ns] } = await db.query(
         `UPDATE quiz_states SET attempts_used = $3, locked_until = $4, passed_at = CASE WHEN $5 THEN now() ELSE passed_at END,
-                best_score = greatest(coalesce(best_score, 0), $6), updated_at = now()
+                best_score = greatest(coalesce(best_score, 0), $6), last_score = $6, updated_at = now()
           WHERE enrollment_id = $1 AND quiz_id = $2 RETURNING *`,
         [enrollment.id, quiz.id, used, lockedUntil, g.passed, g.score]);
       await db.query(`INSERT INTO quiz_attempts (enrollment_id, quiz_id, score, passed, answers) VALUES ($1,$2,$3,$4,$5)`,

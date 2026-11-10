@@ -53,7 +53,7 @@ export function QuizView({ courseId, quizId, onSubmitted }: { courseId: string; 
       <div className="quiz-rules">
         <span>Pass mark <strong>{state.passMark}%</strong></span>
         <span>{state.passed ? 'Passed' : `${state.attemptsLeft} of ${state.maxAttempts} attempts left`}</span>
-        {state.bestScore != null && <span>Best score <strong>{state.bestScore}%</strong></span>}
+        {state.score != null && <span>Your score <strong>{state.score}%</strong></span>}
       </div>
 
       {result && (
@@ -62,7 +62,7 @@ export function QuizView({ courseId, quizId, onSubmitted }: { courseId: string; 
           {!result.passed && (locked ? `You have used all ${state.maxAttempts} attempts.` : `You need ${state.passMark}% to pass. Review the questions marked below and try again.`)}
         </Alert>
       )}
-      {state.passed && !result && <Alert tone="ok" title="You passed this quiz">Best score {state.bestScore}%.</Alert>}
+      {state.passed && !result && <Alert tone="ok" title="You passed this quiz">You scored {state.score}%.</Alert>}
       {locked && (
         <Alert tone="warn" title="This quiz is locked for now">
           You used all {state.maxAttempts} attempts. It unlocks in <Countdown until={state.lockedUntil!} /> ({fmtDateTime(state.lockedUntil)}), then you get {state.maxAttempts} more.

@@ -285,6 +285,22 @@ describe('Quiz attempts (QZ-01, QZ-02)', () => {
     await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: correctAnswers }).expect(409);
   });
 
+  test("the learner sees their latest score, not their best one; so does the teacher", async () => {
+    const s = await registerStudent('Latest Score');
+    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    const first = await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: { a: ['x'], b: ['true'], c: ['m'] } }).expect(200);
+    assert.equal(first.body.state.score, 66.67);
+    const second = await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: wrongAnswers }).expect(200);
+    assert.equal(second.body.state.score, second.body.result.score);
+    assert.ok(second.body.result.score < 66.67);
+    const st = (await call(s.a, 'learn', 'quiz', { courseId, quizId: 'q1' })).body.state;
+    assert.equal(st.score, second.body.result.score);
+    assert.ok(!('bestScore' in st));
+    const ls = (await call(teacher, 'courses', 'learners', { id: courseId }).expect(200)).body.learners;
+    const q = ls.find((l) => l.name === 'Latest Score').quizzes.find((x) => x.quizId === 'q1');
+    assert.equal(q.score, second.body.result.score);
+  });
+
   test('3 failures lock the quiz for 24h, then 3 more attempts; Teacher/Admin can reset', async () => {
     const s = await registerStudent('Struggler');
     await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
@@ -395,6 +411,73 @@ describe('Video lessons complete only when watched', () => {
     await call(teacher, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 1 }).expect(403);
     const outsider = await registerStudent('Outsider Olu');
     await call(outsider.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 1 }).expect(403);
+  });
+});
+
+describe('No learning progress is lost with video completion', () => {
+  let teacher, courseId;
+  before(async () => {
+    teacher = (await makeTeacher('Keep Teacher', root)).a;
+    courseId = await publishedCourse(teacher, root, 'Keep Progress Course');
+  });
+  const enrolled = async (name) => {
+    const s = await registerStudent(name);
+    await call(s.a, 'learn', 'enrol', { courseId }).expect(200);
+    const { rows: [e] } = await pool.query(`SELECT id FROM enrollments WHERE user_id = $1 AND course_id = $2`, [s.id, courseId]);
+    return { ...s, enrollmentId: e.id };
+  };
+
+  test('a video lesson marked complete with the old button stays complete, and still counts for the certificate', async () => {
+    const s = await enrolled('Old Button Bisi');
+    // How the old "Mark as complete" left it: completed, nothing watched recorded.
+    await pool.query(`INSERT INTO lesson_progress (tenant_id, enrollment_id, lesson_id, completed_at, position_sec)
+                      SELECT tenant_id, id, 'l2', now(), 12 FROM enrollments WHERE id = $1`, [s.enrollmentId]);
+    const l = (await call(s.a, 'learn', 'lesson', { courseId, lessonId: 'l2' }).expect(200)).body;
+    assert.equal(l.completed, true);
+    assert.equal(l.positionSec, 12);
+    // New reports never undo it.
+    const r = await call(s.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 0, durationSec: 60 }).expect(200);
+    assert.equal(r.body.completed, true);
+    await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l2' }).expect(200);
+    const p = (await call(s.a, 'learn', 'player', { courseId }).expect(200)).body;
+    assert.equal(p.outline.flatMap((x) => x.items).find((i) => i.id === 'l2').done, true);
+    await call(s.a, 'learn', 'completeLesson', { courseId, lessonId: 'l1' }).expect(200);
+    const q = await call(s.a, 'learn', 'submitQuiz', { courseId, quizId: 'q1', answers: correctAnswers }).expect(200);
+    assert.ok(q.body.certificate?.code, 'the course completes with the old completion');
+  });
+
+  test('a learner part-way through a video before the change keeps credit for it (migration 007)', async () => {
+    const s = await enrolled('Midway Musa');
+    await pool.query(`INSERT INTO lesson_progress (tenant_id, enrollment_id, lesson_id, position_sec)
+                      SELECT tenant_id, id, 'l2', 50 FROM enrollments WHERE id = $1`, [s.enrollmentId]);
+    const sql = await import('node:fs').then((fs) => fs.readFileSync(new URL('../migrations/007_keep_video_progress.sql', import.meta.url), 'utf8'));
+    await pool.query(sql);
+    let r = await call(s.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 50, durationSec: 60 }).expect(200);
+    assert.equal(r.body.watch.watchedSec, 50, 'the 50 s reached before still count');
+    assert.equal(r.body.completed, false);
+    await passTime(s, 'l2', 5);
+    r = await call(s.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 55, durationSec: 60 }).expect(200);
+    assert.equal(r.body.completed, true, 'watching the rest completes it; no need to start again');
+  });
+
+  test('a report that never arrives (dropped connection) is made up by the next one', async () => {
+    const s = await enrolled('Patchy Wifi Pat');
+    await call(s.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 0, durationSec: 60 }).expect(200);
+    // The reports at 5, 10 … 25 s were lost; 30 real seconds later the next one arrives.
+    await passTime(s, 'l2', 30);
+    const r = await call(s.a, 'learn', 'savePosition', { courseId, lessonId: 'l2', positionSec: 30, durationSec: 60 }).expect(200);
+    assert.equal(r.body.watch.watchedSec, 30);
+  });
+
+  test('coming back later resumes where the learner stopped, and the watched time is kept', async () => {
+    const s = await enrolled('Return Rita');
+    await watchVideo(s, courseId, 'l2', { duration: 60, to: 40 });
+    await passTime(s, 'l2', 3600);   // an hour later
+    const l = (await call(s.a, 'learn', 'lesson', { courseId, lessonId: 'l2' }).expect(200)).body;
+    assert.equal(l.positionSec, 40);
+    assert.equal(l.watch.watchedSec, 40);
+    const r = await watchVideo(s, courseId, 'l2', { duration: 60, from: 40, to: 60 });
+    assert.equal(r.body.completed, true);
   });
 });
 
