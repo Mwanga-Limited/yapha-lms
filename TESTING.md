@@ -38,7 +38,7 @@ For safety, the tests refuse to run if this points at the main database, or if t
 
 ```powershell
 cd backend
-npm test               # 76 tests, expect: pass 76, fail 0
+npm test               # 93 tests, expect: pass 93, fail 0
 npm run test:coverage  # same tests plus a coverage table (about 92% of lines)
 ```
 
@@ -46,11 +46,13 @@ npm run test:coverage  # same tests plus a coverage table (about 92% of lines)
 
 ```powershell
 cd frontend
-npm test               # 38 tests, expect: Tests 38 passed
+npm test               # 47 tests, expect: Tests 47 passed
 ```
 
 What runs in the backend:
 
+- `test/referrals.test.js` covers **referrals at enrolment**: every teacher and student has a code, unique across the platform and never changing; sign-up takes no code; a code entered when enrolling is recorded on the payment and enrolment (not case-sensitive), teachers can refer too, enrolling without a code still works; wrong, own, Admin and other-organisation codes are refused before paying; a deactivated member's code stops working; a referral is recorded only when the payment succeeds and never changes; members see their totals and, per course, how many enrolled with their code and who (emails partly hidden); the Admin list shows the same per course with full emails, only to Admins and only for their organisation.
+- `test/course-slugs.test.js` covers **course web addresses**: slugs come from the title (`-2` for a repeat); the course page and player open by slug and by ID; the slug is fixed once published; emails link with the slug; slugs are unique per organisation.
 - `test/payments.test.js` covers **course payments** against the Paystack test server (`test/paystack-test-server.js`, a local copy of the Paystack API), so no internet or real money is needed:
   - only Admins manage the Paystack keys; the secret key is stored encrypted and never returned or written to the audit log
   - the teacher suggests a price; the Admin sets it on approval or later; teachers can't

@@ -186,7 +186,7 @@ export function CourseActions({ g, reload, after }: { g: CourseGet; reload: () =
     <div className="row-gap">
       {(c.status === 'approved' || c.status === 'unpublished') && <Button busy={busy} onClick={() => act('publish', 'Published')}>Publish</Button>}
       {c.status === 'published' && <Button variant="secondary" busy={busy} onClick={() => act('unpublish', 'Unpublished', 'Hide this course from the catalog? Enrolled learners keep access.')}>Unpublish</Button>}
-      {c.status === 'published' && <Link className="btn btn-ghost" to={`/courses/${c.id}`}>View in catalog</Link>}
+      {c.status === 'published' && <Link className="btn btn-ghost" to={`/courses/${c.slug}`}>View in catalog</Link>}
       {c.status !== 'archived' && c.status !== 'in_review' && (g.enrollments > 0 || g.reviews.length > 0 || c.status !== 'draft') && (
         <Button variant="ghost" busy={busy} onClick={() => act('archive', 'Archived', 'Archive this course? It leaves the catalog for good; enrolled learners keep access.')}>Archive</Button>
       )}

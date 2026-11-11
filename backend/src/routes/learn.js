@@ -9,7 +9,7 @@ import { fail, notFound } from '../lib/errors.js';
 import { activeEnrollment, checkCompletion, learnerState, loadCourseWithLive } from '../lib/learning.js';
 import { emails } from '../lib/mailer.js';
 import { notify } from '../lib/notify.js';
-import { courseMeta, lessonPayload } from './courses.js';
+import { courseMeta, courseRef, lessonPayload } from './courses.js';
 
 const itemRef = z.string().trim().min(1).max(64);
 
@@ -17,7 +17,7 @@ const itemRef = z.string().trim().min(1).max(64);
 async function requireEnrollment(db, ctx, courseId, lock = false) {
   const course = await loadCourseWithLive(db, courseId);
   if (!course || !course.live_content) notFound('Course');
-  const enrollment = await activeEnrollment(db, ctx.user.id, courseId, lock);
+  const enrollment = await activeEnrollment(db, ctx.user.id, course.id, lock);
   if (!enrollment) fail(403, 'Enrol in this course to open its lessons and quizzes', { code: 'NOT_ENROLLED' });
   return { course, enrollment };
 }
@@ -90,7 +90,7 @@ export const learnRoutes = actionEndpoint({
   /** Course player shell: outline with per-item progress, resume point, certificate. */
   player: {
     auth: ['student'],   // learning and certificates are for Student accounts only
-    schema: z.object({ courseId: id }),
+    schema: z.object({ courseId: courseRef }),   // the course's ID or slug (the player's web address uses the slug)
     run: async (ctx) => {
       const db = { query };
       const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId);
@@ -246,7 +246,7 @@ export const learnRoutes = actionEndpoint({
 
       const state = quizStateView(ns);
       await notify(db, ctx.user.id, { type: 'quiz', title: g.passed ? `Quiz passed: ${quiz.title}` : `Quiz result: ${quiz.title}`,
-        body: `You scored ${g.score}%.${!g.passed && state.lockedUntil ? ` The quiz is locked for ${lockHours} hours.` : ''}`, link: `/learn/${course.id}` });
+        body: `You scored ${g.score}%.${!g.passed && state.lockedUntil ? ` The quiz is locked for ${lockHours} hours.` : ''}`, link: `/learn/${course.slug}` });
       const learner = ctx.user;
       ctx.after(() => emails.quizResult(learner, course, quiz, g.score, g.passed, state));
 

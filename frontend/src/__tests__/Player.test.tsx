@@ -15,7 +15,7 @@ const outline = [{
     { id: 'q1', kind: 'quiz', title: 'Check-in', required: true, done: false },
   ],
 }];
-const player = { course: { id: 'c1', title: 'Video Course', teacherName: 'Tunde', status: 'published' }, outline, progress: { total: 3, done: 0, percent: 0 }, resumeItemId: null, completedAt: null, certificate: null };
+const player = { course: { id: 'c1', slug: 'video-course', title: 'Video Course', teacherName: 'Tunde', status: 'published' }, outline, progress: { total: 3, done: 0, percent: 0 }, resumeItemId: null, completedAt: null, certificate: null };
 const lessons: Record<string, unknown> = {
   l1: { lesson: { id: 'l1', title: 'Welcome', type: 'text', body: 'Hello.', videoUrl: null, fileUrl: null, fileName: null, durationMin: 2 }, completed: false, positionSec: 0, watch: null },
   l2: { lesson: { id: 'l2', title: 'Watch this', type: 'video', body: '', videoUrl: null, fileUrl: '/api/acme/files/v?exp=1&sig=x', fileName: 'v.mp4', durationMin: 1 }, completed: false, positionSec: 0,
@@ -25,8 +25,8 @@ const lessons: Record<string, unknown> = {
 function open(item: string) {
   return render(
     <ToastProvider>
-      <MemoryRouter initialEntries={[`/learn/c1?item=${item}`]}>
-        <Routes><Route path="/learn/:courseId" element={<Player />} /></Routes>
+      <MemoryRouter initialEntries={[`/learn/video-course?item=${item}`]}>
+        <Routes><Route path="/learn/:courseRef" element={<Player />} /></Routes>
       </MemoryRouter>
     </ToastProvider>,
   );
@@ -95,6 +95,15 @@ describe('no watching is lost when the learner moves on', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Check-in/ })); });
     expect(api).toHaveBeenCalledWith('learn', 'savePosition', { courseId: 'c1', lessonId: 'l2', positionSec: 16, durationSec: 60 }, { keepalive: true });
     expect(api).not.toHaveBeenCalledWith('learn', 'savePosition', expect.objectContaining({ lessonId: 'q1' }), expect.anything());
+  });
+});
+
+describe('the player address uses the course slug', () => {
+  test('opens by slug, then talks to the server with the course ID', async () => {
+    open('l1');
+    await screen.findByRole('button', { name: 'Mark as complete' });
+    expect(api).toHaveBeenCalledWith('learn', 'player', { courseId: 'video-course' });
+    expect(api).toHaveBeenCalledWith('learn', 'lesson', { courseId: 'c1', lessonId: 'l1' });
   });
 });
 

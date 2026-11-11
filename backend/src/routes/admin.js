@@ -11,6 +11,7 @@ import { currentTenant, emailAllowed, publicTenant, settingsOf, settingsSchema }
 import { issueUserToken } from '../lib/tokens.js';
 import { courseMeta, priceSchema } from './courses.js';
 import { toMinor } from '../lib/money.js';
+import { byCourse, referredEnrolments } from '../lib/referrals.js';
 
 const ADMIN = ['admin'];
 const PAGE = 25;
@@ -188,6 +189,36 @@ export const adminRoutes = actionEndpoint({
       ctx.after(() => emails.applicationDecision(u, status === 'approved', d.reason));
       return { ok: true };
     }),
+  },
+
+  // ------------------------------------------------------------- referrals
+  /** Teachers and students whose referral code was used: how many enrolments, and per course how many and who. */
+  referrals: {
+    auth: ADMIN,
+    schema: z.object({ q: str(120).default(''), page }),
+    run: async ({ data }) => {
+      const q = likeEscape(data.q);
+      const params = [q, PAGE, (data.page - 1) * PAGE];
+      const where = `EXISTS (SELECT 1 FROM enrollments x WHERE x.referred_by = u.id)
+        AND ($1 = '' OR u.name ILIKE '%'||$1||'%' OR u.email ILIKE '%'||$1||'%' OR u.referral_code ILIKE '%'||$1||'%'
+             OR EXISTS (SELECT 1 FROM enrollments x JOIN users y ON y.id = x.user_id WHERE x.referred_by = u.id AND y.email ILIKE '%'||$1||'%'))`;
+      const [list, total, sums] = await Promise.all([
+        query(`SELECT u.id, u.name, u.email, u.member_code, u.role, u.referral_code,
+                      (SELECT count(*)::int FROM enrollments x WHERE x.referred_by = u.id) AS referred
+                 FROM users u WHERE ${where} ORDER BY referred DESC, u.name LIMIT $2 OFFSET $3`, params),
+        query(`SELECT count(*)::int AS n FROM users u WHERE ${where}`, [q]),
+        query(`SELECT count(*)::int AS referrals FROM enrollments WHERE referred_by IS NOT NULL`),
+      ]);
+      const used = await referredEnrolments({ query }, list.rows.map((r) => r.id));
+      return {
+        referrers: list.rows.map((r) => ({
+          id: r.id, name: r.name, email: r.email, memberCode: r.member_code, role: r.role, code: r.referral_code, count: r.referred,
+          courses: byCourse(used.get(r.id) ?? []),   // per course: how many enrolled with the code, and who (full emails)
+        })),
+        total: total.rows[0].n, pageSize: PAGE,
+        totals: { referrals: sums.rows[0].referrals, referrers: total.rows[0].n },
+      };
+    },
   },
 
   // ------------------------------------------------------------- organisation settings (this organisation only)

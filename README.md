@@ -148,6 +148,19 @@ All Phase 1 rules apply **within each organisation**:
 - **How a payment works:** the learner clicks **Buy** → Paystack's checkout page → Paystack sends them back to `/<organisation>/payment`, where the server asks Paystack how the payment went. The webhook confirms it as well, so access is given even if the learner closes the page. Only a payment Paystack confirms, for the exact price and currency, gives access. Admins see payments in **Admin › Payments**; learners see their receipts on **My learning** and by email.
 - **Testing payments:** use Paystack **test** keys (`pk_test_…`, `sk_test_…`) and Paystack's test cards. No real money moves. Switch to live keys when ready.
 
+## Referrals
+
+- **Every teacher and student** has a referral code (8 characters, e.g. `PY8EFB2Q`), unique across the whole platform. They find it, with a Copy button and a link, under **Your account › Your referral code**.
+- **Learners use a code when they enrol in a course**, not when they sign up: on the course page there's a **Referral code (optional)** box above **Enrol for ₦…**. A link like `/<organisation>?ref=CODE` fills the box in for them. A wrong code, the learner's own code, or a code from another organisation is refused before paying.
+- The referral is recorded on the payment and, once Paystack confirms it, on the enrolment. It can't be changed afterwards.
+- Because codes are used per course, referrals are shown **per course**: each course the code was used for, how many enrolled in it with the code, and who.
+- **Teachers and students** see their totals (enrolments and courses) and, per course, each learner's name, date and email with most of it hidden (`b***@example.com`).
+- **Admins** see **Admin › Referrals**: every member whose code was used, with the same totals and, per course, each learner's **full** email, name and date.
+
+## Course web addresses
+
+Courses have a readable address made from the title, e.g. `/yapha/courses/bookkeeping-for-small-businesses` and `/yapha/learn/bookkeeping-for-small-businesses`, instead of an ID. If two courses have the same title, the second gets `-2`. The address follows the title until the course is first published; after that it never changes, so shared links keep working. Old links with the course ID still work and move to the readable address.
+
 ## Google sign-in (optional)
 
 Set `GOOGLE_CLIENT_ID` in `backend/.env`. Each organisation can turn the button off in its settings. New Google accounts follow the organisation's joining rules.

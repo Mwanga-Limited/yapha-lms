@@ -50,7 +50,7 @@ export type Level = 'beginner' | 'intermediate' | 'advanced';
 export type LessonType = 'video' | 'text' | 'file';
 
 export interface CourseMeta {
-  id: string; title: string; summary: string; description: string; outline: string; category: string; level: Level;
+  id: string; slug: string; title: string; summary: string; description: string; outline: string; category: string; level: Level;
   language: string; thumbnailFileId: string | null; thumbnailUrl: string | null; status: CourseStatus;
   publishedAt: string | null; createdAt: string; updatedAt: string; teacherId: string;
   /** In the smallest unit (kobo…). price is what learners pay (set by the Admin; every course is paid, 0 = not priced yet); suggestedPrice is the teacher's suggestion. */

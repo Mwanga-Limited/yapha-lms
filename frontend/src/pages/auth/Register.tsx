@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api, errorMessage, type User } from '../../api';
 import { useAuth, useTenant } from '../../auth';
 import { GoogleOption } from '../../components/GoogleButton';
@@ -14,7 +14,8 @@ export function Register() {
   const nav = useNavigate();
   const [f, setF] = useState({ name: '', email: '', password: '', bio: '', expertise: '', credentialUrl: '' });
   const [confirm, setConfirm] = useState('');
-  const [joinAs, setJoinAs] = useState<'student' | 'teacher'>('student');
+  const [params] = useSearchParams();
+  const [joinAs, setJoinAs] = useState<'student' | 'teacher'>(params.get('as') === 'teacher' ? 'teacher' : 'student');
   const [withEmail, setWithEmail] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);

@@ -15,7 +15,7 @@ const { PaymentSettings } = await import('../components/PaymentSettings');
 
 const student = { id: 'u1', role: 'student', emailVerified: true, name: 'Bola Buyer' };
 const course = (price: number) => ({
-  id: 'c1', title: 'Paid Accounting', summary: 'Books', description: '', outline: '', category: 'Business', level: 'beginner', language: 'English',
+  id: 'c1', slug: 'paid-accounting', title: 'Paid Accounting', summary: 'Books', description: '', outline: '', category: 'Business', level: 'beginner', language: 'English',
   thumbnailFileId: null, thumbnailUrl: null, status: 'published', publishedAt: null, createdAt: '', updatedAt: '', teacherId: 't1',
   price, suggestedPrice: price, currency: 'NGN', learners: 3,
 });
@@ -49,7 +49,7 @@ describe('buying a course from its page', () => {
       if (action === 'checkout') return { authorizationUrl: 'https://checkout.paystack.com/ALPHA-abc', reference: 'ALPHA-abc' };
       throw new Error(action);
     });
-    wrap('/courses/c1', <CourseDetail />, '/courses/:id');
+    wrap('/courses/paid-accounting', <CourseDetail />, '/courses/:courseRef');
     const buy = await screen.findByRole('button', { name: 'Enrol for ₦5,000' });
     expect(screen.getByTestId('price')).toHaveTextContent('₦5,000');
     expect(screen.queryByText(/free/i)).toBeNull();
@@ -62,7 +62,7 @@ describe('buying a course from its page', () => {
 
   test('every course is paid: a course without a price has no Enrol button and nothing is free', async () => {
     api.mockImplementation(async () => detail(0));
-    wrap('/courses/c1', <CourseDetail />, '/courses/:id');
+    wrap('/courses/paid-accounting', <CourseDetail />, '/courses/:courseRef');
     expect(await screen.findByText(/doesn't have a price/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Enrol/ })).toBeNull();
     expect(screen.queryByText(/free/i)).toBeNull();
@@ -71,14 +71,14 @@ describe('buying a course from its page', () => {
 
   test('when the organisation has not set up Paystack, buying is disabled with an explanation', async () => {
     api.mockImplementation(async () => detail(500_000, { paymentsReady: false }));
-    wrap('/courses/c1', <CourseDetail />, '/courses/:id');
+    wrap('/courses/paid-accounting', <CourseDetail />, '/courses/:courseRef');
     expect(await screen.findByRole('button', { name: 'Enrol for ₦5,000' })).toBeDisabled();
     expect(screen.getByText(/payments are not set up/)).toBeInTheDocument();
   });
 
   test('a learner who already paid sees "Continue learning", not Buy', async () => {
     api.mockImplementation(async () => detail(500_000, { viewer: { enrolled: true, completed: false, canManage: false, signedIn: true, emailVerified: true } }));
-    wrap('/courses/c1', <CourseDetail />, '/courses/:id');
+    wrap('/courses/paid-accounting', <CourseDetail />, '/courses/:courseRef');
     expect(await screen.findByRole('link', { name: 'Continue learning' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Enrol for ₦/ })).toBeNull();
   });
@@ -86,7 +86,7 @@ describe('buying a course from its page', () => {
 
 describe('coming back from Paystack', () => {
   const back = (status: string, extra: object = {}) => {
-    api.mockResolvedValue({ payment: { reference: 'ALPHA-abc', status, amount: 500_000, currency: 'NGN', failure: null, ...extra }, courseId: 'c1' });
+    api.mockResolvedValue({ payment: { reference: 'ALPHA-abc', status, amount: 500_000, currency: 'NGN', failure: null, ...extra }, courseId: 'c1', courseSlug: 'paid-accounting' });
     return wrap('/payment?trxref=ALPHA-abc&reference=ALPHA-abc', <PaymentResult />, '/payment');
   };
   test('the server checks the payment with Paystack; on success the learner can start', async () => {
@@ -94,13 +94,13 @@ describe('coming back from Paystack', () => {
     expect(await screen.findByText('Payment successful')).toBeInTheDocument();
     expect(api).toHaveBeenCalledWith('payments', 'verify', { reference: 'ALPHA-abc' });
     expect(screen.getByText(/We received ₦5,000/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Start learning' })).toHaveAttribute('href', '/learn/c1');
+    expect(screen.getByRole('link', { name: 'Start learning' })).toHaveAttribute('href', '/learn/paid-accounting');
   });
   test('a failed payment offers to try again', async () => {
     back('failed', { failure: 'Declined' });
     expect(await screen.findByText('Payment not completed')).toBeInTheDocument();
     expect(screen.getByText(/Declined/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Try again' })).toHaveAttribute('href', '/courses/c1');
+    expect(screen.getByRole('link', { name: 'Try again' })).toHaveAttribute('href', '/courses/paid-accounting');
   });
   test('an unfinished payment can be checked again', async () => {
     back('pending');

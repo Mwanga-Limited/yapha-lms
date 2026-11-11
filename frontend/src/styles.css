@@ -766,3 +766,21 @@ fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; }
 .price-panel form { align-items: flex-end; }
 .price-panel .field { margin-bottom: 0; min-width: 200px; }
 .webhook-field { margin-top: 20px; }
+
+/* ---- referrals */
+.referral-panel { margin-top: 24px; }
+.referral-share { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); margin: 12px 0 20px; }
+@media (max-width: 720px) { .referral-share { grid-template-columns: minmax(0, 1fr); } }
+.referral-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }
+.referral-code { font-size: 1.25rem; font-weight: 700; letter-spacing: .12em; padding: 4px 10px; background: var(--hl-wash, #f7f3e8); border-radius: 8px; }
+.referral-row .key-hint { flex: 1 1 220px; min-width: 0; padding: 6px 8px; background: var(--wash, #f4f4f4); border-radius: 6px; }
+.referral-count { margin: 0 0 10px; font-size: 1rem; }
+.referrer-row td { vertical-align: top; }
+.referees-table { margin-top: 8px; }
+@media (max-width: 600px) { .referral-panel .hide-sm { display: none; } .referral-panel .table td, .referral-panel .table th { padding-left: 8px; padding-right: 8px; } }
+.referral-field { margin: 0; width: 100%; max-width: 280px; }
+.referral-field input { text-transform: uppercase; letter-spacing: .06em; }
+.referral-totals { margin: 0 0 14px; }
+.course-referrals { margin: 0 0 18px; }
+.course-referrals h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 1rem; }
+.referees-table { padding: 4px 0; }

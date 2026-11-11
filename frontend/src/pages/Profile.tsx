@@ -1,3 +1,4 @@
+import { ReferralPanel } from '../components/ReferralPanel';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, upload, type User } from '../api';
@@ -126,6 +127,7 @@ export function Profile() {
           <TwoFactor />
         </div>
       </div>
+      {(user!.role === 'student' || user!.role === 'teacher') && <ReferralPanel />}
     </>
   );
 }

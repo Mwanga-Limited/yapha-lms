@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type CourseMeta, type LessonPayload, type OutlineSection } from '../api';
 import { useAuth } from '../auth';
 import { LessonView } from '../components/LessonView';
 import { formatMoney } from '../money';
+import { forgetReferral, rememberedReferral } from '../referral';
 import { Alert, Button, ErrorState, Loading, Modal, StatusBadge, levelLabel, plural, useAction, useDocumentTitle, useLoad } from '../ui';
 
 interface Detail {
@@ -15,28 +16,35 @@ interface Detail {
 }
 
 export function CourseDetail() {
-  const { id = '' } = useParams();
+  const { courseRef = '' } = useParams();   // the course's slug (or ID, for older links)
   const { user } = useAuth();
   const nav = useNavigate();
-  const { data, error, loading } = useLoad(() => api<Detail>('courses', 'detail', { id }), [id, user?.id]);
+  const { data, error, loading } = useLoad(() => api<Detail>('courses', 'detail', { id: courseRef }), [courseRef, user?.id]);
   const [preview, setPreview] = useState<LessonPayload | null>(null);
+  // Someone's referral code, entered when enrolling; filled in if the learner arrived through a referral link (?ref=CODE).
+  const [referralCode, setReferralCode] = useState(() => rememberedReferral());
   const { busy, run } = useAction();
   useDocumentTitle(data?.course.title ?? 'Course');
+  // An old link with the course ID: show the readable address instead.
+  useEffect(() => {
+    if (data && data.course.slug && courseRef !== data.course.slug) nav(`/courses/${data.course.slug}`, { replace: true });
+  }, [data, courseRef]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading && !data) return <Loading />;
   if (error) return <ErrorState error={error} />;
   if (!data) return null;
   const { course, outline, teacher, viewer, paymentsReady } = data;
+  const id = course.id;
   const priced = course.price > 0;   // every course is paid; 0 = the Admin hasn't set a price yet
   const price = formatMoney(course.price, course.currency);
   const lessons = outline.flatMap((s) => s.items).filter((i) => i.kind === 'lesson').length;
   const quizzes = outline.flatMap((s) => s.items).filter((i) => i.kind === 'quiz').length;
 
   const enrol = async () => {
-    if (!user) { nav('/login', { state: { from: `/courses/${id}` } }); return; }
+    if (!user) { nav('/login', { state: { from: `/courses/${course.slug}` } }); return; }
     // Every course is paid: go to Paystack's secure checkout; Paystack brings the learner back to /payment.
-    const r = await run(() => api<{ authorizationUrl: string }>('payments', 'checkout', { courseId: id }));
-    if (r) window.location.assign(r.authorizationUrl);
+    const r = await run(() => api<{ authorizationUrl: string }>('payments', 'checkout', { courseId: id, referralCode: referralCode.trim() || undefined }));
+    if (r) { forgetReferral(); window.location.assign(r.authorizationUrl); }
   };
   const canBuy = priced && paymentsReady;
   const openPreview = (lessonId: string) => run(async () => {
@@ -60,10 +68,17 @@ export function CourseDetail() {
           {course.status !== 'published' && <p><StatusBadge status={course.status} /> <span className="muted">This course is not in the catalog.</span></p>}
           <div className="detail-cta">
             {viewer.enrolled && user?.role === 'student' ? (
-              <Link className="btn btn-primary btn-lg" to={`/learn/${id}`}>{viewer.completed ? 'Review the course' : 'Continue learning'}</Link>
+              <Link className="btn btn-primary btn-lg" to={`/learn/${course.slug}`}>{viewer.completed ? 'Review the course' : 'Continue learning'}</Link>
             ) : course.status === 'published' && !viewer.canManage && (!user || user.role === 'student') ? (
               <div className="buy">
                 {priced && <p className="detail-price" data-testid="price">{price}</p>}
+                {canBuy && user && (
+                  <div className="field referral-field">
+                    <label htmlFor="referral-code">Referral code (optional)</label>
+                    <input id="referral-code" value={referralCode} maxLength={20} autoComplete="off" spellCheck={false}
+                      placeholder="e.g. PY8EFB2Q" onChange={(e) => setReferralCode(e.target.value.toUpperCase())} />
+                  </div>
+                )}
                 {priced && (
                   <Button className="btn-lg" busy={busy} onClick={enrol} disabled={(!!user && !user.emailVerified) || !canBuy}>
                     Enrol for {price}

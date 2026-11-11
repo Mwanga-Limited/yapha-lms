@@ -1,3 +1,4 @@
+import { rememberReferral } from '../referral';
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { api, type Notification } from '../api';
@@ -81,6 +82,8 @@ export function Layout() {
   const loc = useLocation();
   const [menu, setMenu] = useState(false);
   useEffect(() => setMenu(false), [loc.pathname]);
+  // Arrived through someone's referral link (…?ref=CODE): remember the code for sign-up.
+  useEffect(() => { rememberReferral(new URLSearchParams(loc.search).get('ref')); }, [loc.search]);
 
   const tenant = useTenant();
   const links: { to: string; label: string; end?: boolean }[] = [{ to: '/', label: 'Courses', end: true }];
@@ -105,8 +108,6 @@ export function Layout() {
           <nav className={`mainnav ${menu ? 'open' : ''}`} aria-label="Main">
             {links.map((l) => <NavLink key={l.to + l.label} to={l.to} end={l.end}>{l.label}</NavLink>)}
             {!user && <NavLink to="/verify">Verify a certificate</NavLink>}
-            {!user && <NavLink to="/login" className="nav-cta-ghost">Sign in</NavLink>}
-            {!user && tenant.access.signup === 'open' && <NavLink to="/register" className="nav-cta">Create free account</NavLink>}
             {isSuper && (
               <div className="nav-user">
                 <a href="/platform" className="super-chip" title="You are viewing this organisation as the platform super admin">Platform console</a>
@@ -122,6 +123,13 @@ export function Layout() {
               </div>
             )}
           </nav>
+          {!user && (
+            // Always visible, also on phones (the page links above fold into the menu there).
+            <div className="nav-auth">
+              <NavLink to="/login" className="nav-signin">Sign in</NavLink>
+              {tenant.access.signup === 'open' && <NavLink to="/register" className="nav-join">Sign up</NavLink>}
+            </div>
+          )}
           {user && !isSuper && <Bell />}
         </div>
       </header>

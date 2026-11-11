@@ -7,6 +7,7 @@ import { Button, Loading, useDocumentTitle } from '../../ui';
 interface Verified {
   payment: { reference: string; status: 'pending' | 'success' | 'failed'; amount: number; currency: string; failure: string | null };
   courseId: string;
+  courseSlug: string;
 }
 
 /**
@@ -49,7 +50,7 @@ export function PaymentResult() {
         <h1>Payment successful</h1>
         <p>We received {amount}. You now have full access to the course. A receipt is on its way to your email.</p>
         <p className="muted small">Reference: {p.reference}</p>
-        <div className="row-gap"><Link className="btn btn-primary btn-lg" to={`/learn/${result!.courseId}`}>Start learning</Link></div>
+        <div className="row-gap"><Link className="btn btn-primary btn-lg" to={`/learn/${result!.courseSlug}`}>Start learning</Link></div>
       </div>
     );
   }
@@ -58,7 +59,7 @@ export function PaymentResult() {
       <div className="pay-result" data-testid="pay-failed">
         <h1>Payment not completed</h1>
         <p>Your payment of {amount} did not go through{p.failure ? `: ${p.failure}` : ''}. You can try again; if money left your account, contact your administrator with the reference {p.reference}.</p>
-        <div className="row-gap"><Link className="btn btn-primary" to={`/courses/${result!.courseId}`}>Try again</Link></div>
+        <div className="row-gap"><Link className="btn btn-primary" to={`/courses/${result!.courseSlug}`}>Try again</Link></div>
       </div>
     );
   }
@@ -67,7 +68,7 @@ export function PaymentResult() {
       <h1>Payment not finished</h1>
       <p>Paystack hasn't confirmed this payment yet. If you closed the payment window, go back to the course and try again.</p>
       <p className="muted small">Reference: {p.reference}</p>
-      <div className="row-gap"><Button busy={checking} onClick={check}>Check again</Button><Link className="btn btn-secondary" to={`/courses/${result!.courseId}`}>Back to the course</Link></div>
+      <div className="row-gap"><Button busy={checking} onClick={check}>Check again</Button><Link className="btn btn-secondary" to={`/courses/${result!.courseSlug}`}>Back to the course</Link></div>
     </div>
   );
 }

@@ -22,6 +22,7 @@ import { Dashboard } from './pages/student/Dashboard';
 import { Player } from './pages/student/Player';
 import { PaymentResult } from './pages/student/PaymentResult';
 import { AdminPayments } from './pages/admin/Payments';
+import { AdminReferrals } from './pages/admin/Referrals';
 import { CourseEditor } from './pages/teacher/CourseEditor';
 import { TeachHome } from './pages/teacher/TeachHome';
 import { AdminSettings } from './pages/admin/Settings';
@@ -51,7 +52,7 @@ export function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<Catalog />} />
-        <Route path="courses/:id" element={<CourseDetail />} />
+        <Route path="courses/:courseRef" element={<CourseDetail />} />
         <Route path="login" element={<Login />} />
         <Route path="register" element={<Register />} />
         <Route path="verify-email" element={<VerifyEmail />} />
@@ -78,10 +79,11 @@ export function App() {
         <Route path="admin/audit" element={<Guard roles={['admin']}><AdminAudit /></Guard>} />
         <Route path="admin/settings" element={<Guard roles={['admin']}><AdminSettings /></Guard>} />
         <Route path="admin/payments" element={<Guard roles={['admin']}><AdminPayments /></Guard>} />
+        <Route path="admin/referrals" element={<Guard roles={['admin']}><AdminReferrals /></Guard>} />
         <Route path="*" element={<Empty title="This page does not exist"><Link to="/">Browse courses</Link></Empty>} />
       </Route>
       {/* The course player uses the full screen */}
-      <Route path="learn/:courseId" element={<Guard roles={['student']}><Player /></Guard>} />
+      <Route path="learn/:courseRef" element={<Guard roles={['student']}><Player /></Guard>} />
     </Routes>
   );
 }

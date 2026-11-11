@@ -12,6 +12,7 @@ import { fail } from '../lib/errors.js';
 import { notifyAdmins } from '../lib/notify.js';
 import { publicUser, setSession } from '../lib/security.js';
 import { learnerState } from '../lib/learning.js';
+import { REFERRER_ROLES, byCourse, maskEmail, referralLink, referredEnrolments } from '../lib/referrals.js';
 
 const profileFields = ['name', 'phone', 'bio', 'photo_file_id'];
 
@@ -141,7 +142,7 @@ export const accountRoutes = actionEndpoint({
     run: async (ctx) => {
       const { rows } = await query(
         `SELECT e.id AS enrollment_id, e.enrolled_at, e.completed_at, e.last_item_id, e.last_accessed_at,
-                c.id, c.title, c.summary, c.category, c.level, c.thumbnail_file_id, c.status, v.content,
+                c.id, c.slug, c.title, c.summary, c.category, c.level, c.thumbnail_file_id, c.status, v.content,
                 u.name AS teacher_name, cert.code AS certificate_code, cert.revoked_at AS certificate_revoked_at
            FROM enrollments e
            JOIN courses c ON c.id = e.course_id
@@ -156,7 +157,7 @@ export const accountRoutes = actionEndpoint({
         const progress = computeProgress(r.content, st.completed, st.passed);
         const last = r.last_item_id ? findItem(r.content, r.last_item_id) : null;
         courses.push({
-          id: r.id, title: r.title, summary: r.summary, category: r.category, level: r.level, teacherName: r.teacher_name,
+          id: r.id, slug: r.slug, title: r.title, summary: r.summary, category: r.category, level: r.level, teacherName: r.teacher_name,
           thumbnailUrl: r.thumbnail_file_id ? `${apiBase()}/files/${r.thumbnail_file_id}` : null, courseStatus: r.status,
           enrolledAt: r.enrolled_at, completedAt: r.completed_at, lastAccessedAt: r.last_accessed_at,
           resume: last ? { id: last.id, title: last.title, kind: last.kind } : null,
@@ -165,6 +166,23 @@ export const accountRoutes = actionEndpoint({
         });
       }
       return { courses };
+    },
+  },
+
+  /**
+   * My referral code and link, and the courses it was used for: per course, how many enrolled with it and who
+   * (part of each email hidden). Referral codes are for teachers and students.
+   */
+  referrals: {
+    auth: REFERRER_ROLES,
+    run: async (ctx) => {
+      const { rows: [me] } = await query(`SELECT referral_code FROM users WHERE id = $1`, [ctx.user.id]);
+      const used = (await referredEnrolments({ query }, [ctx.user.id])).get(ctx.user.id) ?? [];
+      return {
+        code: me.referral_code, link: referralLink(me.referral_code),
+        count: used.length,   // enrolments made with the code, across all courses
+        courses: byCourse(used, maskEmail),
+      };
     },
   },
 });
