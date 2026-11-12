@@ -148,6 +148,12 @@ All Phase 1 rules apply **within each organisation**:
 - **How a payment works:** the learner clicks **Buy** → Paystack's checkout page → Paystack sends them back to `/<organisation>/payment`, where the server asks Paystack how the payment went. The webhook confirms it as well, so access is given even if the learner closes the page. Only a payment Paystack confirms, for the exact price and currency, gives access. Admins see payments in **Admin › Payments**; learners see their receipts on **My learning** and by email.
 - **Testing payments:** use Paystack **test** keys (`pk_test_…`, `sk_test_…`) and Paystack's test cards. No real money moves. Switch to live keys when ready.
 
+## Branding: Yapha by default
+
+- **The platform's own pages and emails use the Yapha brand**: the home page (`/`), Register your organisation (`/register`), the platform console (`/platform`), the browser tab name and icon, and emails sent by the platform (e.g. "New organisation registered"). Colours: orange `#FF950D`, navy `#030027`. The logo is `frontend/src/assets/yapha-logo.svg`; the values live in `PLATFORM_BRAND` (`backend/src/lib/tenant.js`) and `:root` in `frontend/src/styles.css`.
+- **Every organisation starts with the Yapha look** (colours and light header). Its Admin can apply its own branding under **Admin › Settings** (logo, display name, colours, header); that replaces Yapha's on the organisation's pages, emails and certificates. Anything the organisation hasn't set stays Yapha's; an organisation without a logo shows its name.
+- Set `MAIL_FROM="Yapha <no-reply@your-domain>"` in `backend/.env` so platform emails come from Yapha. Organisation emails are sent in the organisation's name.
+
 ## Referrals
 
 - **Every teacher and student** has a referral code (8 characters, e.g. `PY8EFB2Q`), unique across the whole platform. They find it, with a Copy button and a link, under **Your account › Your referral code**.

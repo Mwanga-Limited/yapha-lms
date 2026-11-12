@@ -299,3 +299,30 @@ describe('Platform super admin', () => {
     assert.ok(platformOnly.entries.some((e) => e.action === 'platform.tenant_suspend'));
   });
 });
+
+describe('Yapha is the default brand', () => {
+  test("a new organisation starts with Yapha's colours and light header; the platform's own emails use Yapha", async () => {
+    const r = await agent().post('/api/organisations').send({ action: 'register', data: {
+      organisationName: 'Delta Academy', slug: 'delta', name: 'Dami Admin', email: 'dami@delta.test', password: 'DamiPassword1!' } }).expect(200);
+    assert.equal(r.body.organisation.url, '/delta');
+    const t = (await callIn('delta', agent(), 'auth', 'me')).body.tenant;
+    assert.deepEqual([t.branding.accentColor, t.branding.primaryColor, t.branding.header], ['#FF950D', '#030027', 'light']);
+    assert.equal(t.branding.logoUrl, null, 'no logo until the organisation uploads one: its name is shown');
+    const platformMail = outbox.findLast((m) => m.to === SUPER.email && /New organisation registered: Delta Academy/.test(m.subject));
+    assert.match(platformMail.html, /#030027/);
+    assert.match(platformMail.html, /Yapha platform/);
+  });
+
+  test("an organisation's own branding replaces Yapha's; anything it hasn't set stays Yapha's", async () => {
+    const dami = await loginPrivileged('dami@delta.test', 'DamiPassword1!', 'delta').catch(async () => {
+      await callIn('delta', agent(), 'auth', 'verifyEmail', { token: tokenFromMail('dami@delta.test', 'verify-email') });
+      return loginPrivileged('dami@delta.test', 'DamiPassword1!', 'delta');
+    });
+    const current = (await callIn('delta', dami, 'admin', 'settings').expect(200)).body.settings;
+    await callIn('delta', dami, 'admin', 'updateSettings', { settings: { ...current, branding: { ...current.branding, accentColor: '#2E86DE', displayName: 'Delta Learning' } } }).expect(200);
+    const t = (await callIn('delta', agent(), 'auth', 'me')).body.tenant;
+    assert.equal(t.branding.accentColor, '#2E86DE', 'their accent');
+    assert.equal(t.name, 'Delta Learning', 'their name');
+    assert.equal(t.branding.primaryColor, '#030027', "Yapha's navy where they haven't chosen one");
+  });
+});

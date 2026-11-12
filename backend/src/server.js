@@ -11,5 +11,5 @@ createApp().listen(config.port, (err) => {
       : err);
     process.exit(1);
   }
-  console.log(`E-Learning API listening on http://localhost:${config.port}`);
+  console.log(`Yapha API listening on http://localhost:${config.port}`);
 });

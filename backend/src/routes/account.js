@@ -7,7 +7,7 @@ import { query, tx } from '../db.js';
 import { actionEndpoint, id, password, reqStr, str } from '../lib/actions.js';
 import { audit } from '../lib/audit.js';
 import { computeProgress, findItem } from '../lib/content.js';
-import { apiBase } from '../lib/tenant.js';
+import { apiBase, currentTenant, tenantName } from '../lib/tenant.js';
 import { fail } from '../lib/errors.js';
 import { notifyAdmins } from '../lib/notify.js';
 import { publicUser, setSession } from '../lib/security.js';
@@ -61,7 +61,7 @@ export const accountRoutes = actionEndpoint({
       if (ctx.user.totp_enabled) fail(400, 'Authenticator app is already enabled');
       const secret = authenticator.generateSecret();
       await query(`UPDATE users SET totp_secret = $2 WHERE id = $1 AND NOT totp_enabled`, [ctx.user.id, secret]);
-      const uri = authenticator.keyuri(ctx.user.email, 'E-Learning', secret);
+      const uri = authenticator.keyuri(ctx.user.email, tenantName(currentTenant()), secret);
       return { secret, uri, qr: await QRCode.toDataURL(uri, { margin: 1, width: 220 }) };
     },
   },

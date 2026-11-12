@@ -1,3 +1,4 @@
+import { YaphaLogo } from '../components/YaphaLogo';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { platformApi, type User } from '../api';
@@ -39,9 +40,9 @@ function PlatformLayout() {
   return (
     <>
       <a href="#main" className="skip">Skip to content</a>
-      <header className="topbar topbar-platform">
+      <header className="topbar topbar-light topbar-platform">
         <div className="wrap topbar-inner">
-          <Link to="/" className="brand"><span className="brand-mark" aria-hidden /><span className="brand-name">Platform console</span></Link>
+          <Link to="/" className="brand" aria-label="Yapha platform console home"><YaphaLogo /><span className="brand-name">Platform console</span></Link>
           {user && (
             <nav className="mainnav platform-nav" aria-label="Platform">
               <NavLink to="/" end>Overview</NavLink>

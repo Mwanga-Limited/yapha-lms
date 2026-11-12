@@ -227,7 +227,7 @@ export function timeAgo(d: string) {
 }
 
 /** Name shown after page titles: the organisation's name, or the platform's. */
-let siteName = 'Learn';
+let siteName = 'Yapha';   // the platform's name; an organisation's pages use the organisation's name
 export const setSiteName = (n: string) => { siteName = n; };
 export function useDocumentTitle(title: string) {
   useEffect(() => { document.title = title ? `${title} — ${siteName}` : siteName; }, [title]);

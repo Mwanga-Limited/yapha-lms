@@ -84,7 +84,7 @@ export function CourseDetail() {
                     Enrol for {price}
                   </Button>
                 )}
-                {canBuy && <p className="muted small buy-note">One payment, full access to every lesson, quiz and the certificate. Secure payment by Paystack.</p>}
+                {canBuy && <p className="muted small buy-note">One-time payment</p>}
               </div>
             ) : null}
             {viewer.canManage && <Link className="btn btn-secondary" to={user?.id === course.teacherId ? `/teach/courses/${id}` : `/admin/courses/${id}`}>Manage course</Link>}
