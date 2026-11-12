@@ -97,7 +97,7 @@ export function publicUser(u) {
     id: u.id, email: u.email, name: u.name, phone: u.phone, bio: u.bio, expertise: u.expertise,
     photoUrl: u.photo_file_id ? `${apiBase()}/files/${u.photo_file_id}` : null,
     role: u.isSuper ? 'superadmin' : u.role, isSuper: !!u.isSuper || u.role === 'superadmin',
-    memberCode: u.member_code ?? null, tenantId: u.tenant_id ?? null,
+    memberCode: u.member_code ?? null, tenantId: u.tenant_id ?? null, referralCode: u.referral_code ?? null,
     isRoot: u.is_root, emailVerified: !!u.email_verified_at,
     totpEnabled: u.totp_enabled, hasPassword: !!u.password_hash, googleLinked: !!u.google_sub,
     createdAt: u.created_at,

@@ -195,7 +195,7 @@ export const platformRoutes = actionEndpoint({
       if (ctx.user.totp_enabled) fail(400, 'Authenticator app is already enabled');
       const secret = authenticator.generateSecret();
       await query(`UPDATE users SET totp_secret = $2 WHERE id = $1`, [ctx.user.id, secret]);
-      const uri = authenticator.keyuri(ctx.user.email, 'E-Learning platform', secret);
+      const uri = authenticator.keyuri(ctx.user.email, 'Yapha platform', secret);
       return { secret, uri, qr: await QRCode.toDataURL(uri, { margin: 1, width: 220 }) };
     },
   },

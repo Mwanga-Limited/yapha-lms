@@ -59,18 +59,18 @@ export async function applyPaystackResult(db, ctx, reference, tx) {
 
   // Enrol (or attach the payment to an existing enrolment).
   const { rows: [e] } = await db.query(
-    `INSERT INTO enrollments (user_id, course_id, payment_id) VALUES ($1,$2,$3)
+    `INSERT INTO enrollments (user_id, course_id, payment_id, referred_by) VALUES ($1,$2,$3,$4)
      ON CONFLICT (user_id, course_id) WHERE status = 'active' DO UPDATE SET payment_id = coalesce(enrollments.payment_id, EXCLUDED.payment_id)
-     RETURNING *, (xmax = 0) AS inserted`, [p.user_id, p.course_id, p.id]);
+     RETURNING *, (xmax = 0) AS inserted`, [p.user_id, p.course_id, p.id, p.referred_by]);   // referred_by: whose referral code was used
   const { rows: [learner] } = await db.query(`SELECT * FROM users WHERE id = $1`, [p.user_id]);
   const { rows: [course] } = await db.query(`SELECT * FROM courses WHERE id = $1`, [p.course_id]);
   await audit(db, ctx, { action: 'payment.success', targetType: 'payment', targetId: p.id, actor: learner,
     newValues: { reference: p.reference, course: course.title, amount: p.amount_minor, currency: p.currency, channel: paid.channel } });
   if (e.inserted) {
     await audit(db, ctx, { action: 'enrollment.create', targetType: 'enrollment', targetId: e.id, actor: learner,
-      newValues: { courseId: course.id, course: course.title, paymentId: p.id } });
+      newValues: { courseId: course.id, course: course.title, paymentId: p.id, referredBy: p.referred_by } });
   }
-  await notify(db, learner.id, { type: 'enrollment', title: 'Payment received', body: `You now have full access to ${course.title}.`, link: `/learn/${course.id}` });
+  await notify(db, learner.id, { type: 'enrollment', title: 'Payment received', body: `You now have full access to ${course.title}.`, link: `/learn/${course.slug}` });
   ctx.after(() => emails.paymentReceipt(learner, course, paid));
   return { payment: paid, newlyPaid: true };
 }

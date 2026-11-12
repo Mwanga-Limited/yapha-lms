@@ -8,6 +8,7 @@ import { fail, notFound } from '../lib/errors.js';
 import { KEY_RE, PaystackError, initializeTransaction, validWebhookSignature, verifyTransaction } from '../lib/paystack.js';
 import { applyPaystackResult, paymentAccount, paymentView, usablePaymentAccount } from '../lib/payments.js';
 import { encryptSecret } from '../lib/secrets.js';
+import { findReferrer } from '../lib/referrals.js';
 import { currentTenant, settingsOf } from '../lib/tenant.js';
 
 const ADMIN = ['admin'];
@@ -27,7 +28,8 @@ export const paymentRoutes = actionEndpoint({
   checkout: {
     auth: ['student'],
     verified: true,
-    schema: z.object({ courseId: id }),
+    // referralCode: optional, someone's referral code entered when enrolling (or filled in from their referral link).
+    schema: z.object({ courseId: id, referralCode: z.string().trim().max(40).optional() }),
     run: async (ctx) => {
       const { rows: [c] } = await query(`SELECT * FROM courses WHERE id = $1`, [ctx.data.courseId]);
       if (!c) notFound('Course');
@@ -35,21 +37,22 @@ export const paymentRoutes = actionEndpoint({
       if (c.price_minor <= 0) fail(409, 'This course is not available yet: it has no price', { code: 'NOT_PRICED' });
       const { rows: [e] } = await query(`SELECT 1 FROM enrollments WHERE user_id = $1 AND course_id = $2 AND status = 'active'`, [ctx.user.id, c.id]);
       if (e) fail(409, 'You already have access to this course', { code: 'ALREADY_ENROLLED' });
+      const referrer = await findReferrer({ query }, ctx.data.referralCode, ctx.user.id);
       const account = await usablePaymentAccount({ query }, fail);
 
       const tenant = currentTenant();
       const currency = settingsOf(tenant).payments.currency;
       const reference = newReference();
       const { rows: [p] } = await query(
-        `INSERT INTO payments (user_id, course_id, reference, amount_minor, currency, live_mode) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-        [ctx.user.id, c.id, reference, c.price_minor, currency, account.liveMode]);
+        `INSERT INTO payments (user_id, course_id, reference, amount_minor, currency, live_mode, referred_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [ctx.user.id, c.id, reference, c.price_minor, currency, account.liveMode, referrer?.id ?? null]);
       const init = await paystack(() => initializeTransaction(account.secretKey, {
         email: ctx.user.email, amount: c.price_minor, currency, reference,
         callbackUrl: `${config.appUrl}/${tenant.slug}/payment`,   // Paystack adds ?trxref=…&reference=…
         metadata: { organisation: tenant.slug, courseId: c.id, course: c.title, userId: ctx.user.id, paymentId: p.id },
       }));
       await audit({ query }, ctx, { action: 'payment.start', targetType: 'payment', targetId: p.id,
-        newValues: { reference, course: c.title, amount: c.price_minor, currency } });
+        newValues: { reference, course: c.title, amount: c.price_minor, currency, referredBy: referrer?.id ?? null } });
       return { authorizationUrl: init.authorization_url, reference };
     },
   },
@@ -67,7 +70,8 @@ export const paymentRoutes = actionEndpoint({
         const data = await paystack(() => verifyTransaction(account.secretKey, p.reference));
         result = await tx((db) => applyPaystackResult(db, ctx, p.reference, data));
       }
-      return { payment: paymentView(result.payment), courseId: p.course_id };
+      const { rows: [c] } = await query(`SELECT slug FROM courses WHERE id = $1`, [p.course_id]);
+      return { payment: paymentView(result.payment), courseId: p.course_id, courseSlug: c.slug };
     },
   },
 
@@ -76,9 +80,9 @@ export const paymentRoutes = actionEndpoint({
     auth: ['student'],
     run: async (ctx) => {
       const { rows } = await query(
-        `SELECT p.*, c.title AS course_title FROM payments p JOIN courses c ON c.id = p.course_id
+        `SELECT p.*, c.title AS course_title, c.slug AS course_slug FROM payments p JOIN courses c ON c.id = p.course_id
           WHERE p.user_id = $1 AND p.status = 'success' ORDER BY p.paid_at DESC`, [ctx.user.id]);
-      return { payments: rows.map((p) => ({ ...paymentView(p), course: { id: p.course_id, title: p.course_title } })) };
+      return { payments: rows.map((p) => ({ ...paymentView(p), course: { id: p.course_id, slug: p.course_slug, title: p.course_title } })) };
     },
   },
 

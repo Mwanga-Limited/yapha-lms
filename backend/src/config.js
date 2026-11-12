@@ -42,6 +42,6 @@ export const config = {
     secure: env.SMTP_SECURE === 'true',
     user: env.SMTP_USER,
     pass: env.SMTP_PASS,
-    from: env.MAIL_FROM || 'E-Learning <no-reply@elearning.local>',
+    from: env.MAIL_FROM || 'Yapha <no-reply@yapha.local>',
   },
 };

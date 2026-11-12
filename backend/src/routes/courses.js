@@ -24,9 +24,12 @@ export function lessonPayload(lesson) {
   };
 }
 
+/** A course's ID or its slug, e.g. "bookkeeping-for-small-businesses" (public pages use the slug in their web address). */
+export const courseRef = z.string().trim().min(1).max(120);
+
 export function courseMeta(c) {
   return {
-    id: c.id, title: c.title, summary: c.summary, description: c.description, outline: c.outline, category: c.category,
+    id: c.id, slug: c.slug, title: c.title, summary: c.summary, description: c.description, outline: c.outline, category: c.category,
     level: c.level, language: c.language, thumbnailFileId: c.thumbnail_file_id, thumbnailUrl: fileUrl(c.thumbnail_file_id),
     status: c.status, publishedAt: c.published_at, createdAt: c.created_at, updatedAt: c.updated_at, teacherId: c.teacher_id,
     // Prices in the smallest unit (kobo…). Every course is paid: price is what learners pay (set by the Admin); 0 = not priced yet.
@@ -118,14 +121,14 @@ export const courseRoutes = actionEndpoint({
 
   detail: {
     auth: 'public',
-    schema: z.object({ id }),
+    schema: z.object({ id: courseRef }),   // ID or slug
     run: async ({ data, user }) => {
       const { rows } = await query(
         `SELECT c.*, v.content AS live_content, u.name AS t_name, u.bio AS t_bio, u.expertise AS t_expertise, u.photo_file_id AS t_photo,
                 (SELECT count(*) FROM enrollments e WHERE e.course_id = c.id AND e.status = 'active') AS learners,
                 (SELECT count(*) FROM courses c2 WHERE c2.teacher_id = c.teacher_id AND c2.status = 'published') AS t_courses
            FROM courses c JOIN users u ON u.id = c.teacher_id LEFT JOIN course_versions v ON v.id = c.live_version_id
-          WHERE c.id = $1`, [data.id]);
+          WHERE c.id::text = $1 OR c.slug = $1`, [data.id]);
       const c = rows[0];
       if (!c) notFound('Course');
       const enrollment = user ? (await query(`SELECT id, completed_at FROM enrollments WHERE user_id = $1 AND course_id = $2 AND status = 'active'`, [user.id, c.id])).rows[0] : null;
@@ -428,7 +431,7 @@ export const courseRoutes = actionEndpoint({
       await db.query(`UPDATE quiz_states SET attempts_used = 0, locked_until = NULL, updated_at = now() WHERE enrollment_id = $1 AND quiz_id = $2`, [e.id, ctx.data.quizId]);
       await audit(db, ctx, { action: 'quiz.reset_attempts', targetType: 'enrollment', targetId: e.id,
         oldValues: { quizId: ctx.data.quizId, attemptsUsed: old.attempts_used, lockedUntil: old.locked_until }, newValues: { attemptsUsed: 0, lockedUntil: null } });
-      await notify(db, e.user_id, { type: 'quiz', title: 'Quiz attempts reset', body: `You have ${quizRules().maxAttempts} new attempts in ${c.title}.`, link: `/learn/${c.id}` });
+      await notify(db, e.user_id, { type: 'quiz', title: 'Quiz attempts reset', body: `You have ${quizRules().maxAttempts} new attempts in ${c.title}.`, link: `/learn/${c.slug}` });
       return { ok: true };
     }),
   },

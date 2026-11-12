@@ -1,3 +1,4 @@
+import { YaphaLogo } from '../components/YaphaLogo';
 import { useState, type FormEvent } from 'react';
 import { RESERVED_PATHS } from '../api';
 import { useDocumentTitle } from '../ui';
@@ -21,7 +22,7 @@ export function Landing() {
   return (
     <main className="landing">
       <div className="landing-card">
-        <span className="brand-mark" aria-hidden />
+        <YaphaLogo />
         <h1>Find your organisation</h1>
         <p className="muted">Each school, company or academy has its own learning site. Enter the short name from the address you were given, for example <strong>acme</strong> in {window.location.host}/<strong>acme</strong>.</p>
         <form onSubmit={go} className="landing-form">

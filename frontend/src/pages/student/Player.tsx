@@ -7,7 +7,7 @@ import { watchLabel, type WatchState } from '../../watch';
 import { QuizView, type QuizSubmitted } from './QuizView';
 
 interface PlayerData {
-  course: { id: string; title: string; teacherName: string; status: string };
+  course: { id: string; slug: string; title: string; teacherName: string; status: string };
   outline: OutlineSection[];
   progress: Progress;
   resumeItemId: string | null;
@@ -16,11 +16,16 @@ interface PlayerData {
 }
 
 export function Player() {
-  const { courseId = '' } = useParams();
+  const { courseRef = '' } = useParams();   // the course's slug (or ID, for older links)
   const [params, setParams] = useSearchParams();
   const nav = useNavigate();
   const toast = useToast();
-  const { data, error, loading, reload, setData } = useLoad(() => api<PlayerData>('learn', 'player', { courseId }), [courseId]);
+  const { data, error, loading, reload, setData } = useLoad(() => api<PlayerData>('learn', 'player', { courseId: courseRef }), [courseRef]);
+  const courseId = data?.course.id ?? '';
+  // An old link with the course ID: show the readable address instead.
+  useEffect(() => {
+    if (data && data.course.slug && courseRef !== data.course.slug) nav(`/learn/${data.course.slug}${window.location.search}`, { replace: true });
+  }, [data, courseRef]); // eslint-disable-line react-hooks/exhaustive-deps
   const [lesson, setLesson] = useState<{ lesson: LessonPayload; completed: boolean; positionSec: number; watch: WatchState | null } | null>(null);
   const [drawer, setDrawer] = useState(false);
   const { busy, run } = useAction();
@@ -80,7 +85,7 @@ export function Player() {
       <div className="wrap main">
         <Empty title={notEnrolled ? 'Enrol to open this course' : 'This course could not be opened'}>
           <p>{error instanceof Error ? error.message : ''}</p>
-          <Link className="btn btn-primary" to={`/courses/${courseId}`}>Go to the course page</Link>
+          <Link className="btn btn-primary" to={`/courses/${courseRef}`}>Go to the course page</Link>
         </Empty>
       </div>
     );
@@ -174,7 +179,7 @@ export function Player() {
               </nav>
             </>
           )}
-          <p className="muted small player-foot">Taught by {data.course.teacherName} · <button className="link-btn" onClick={() => nav(`/courses/${courseId}`)}>Course page</button></p>
+          <p className="muted small player-foot">Taught by {data.course.teacherName} · <button className="link-btn" onClick={() => nav(`/courses/${data.course.slug}`)}>Course page</button></p>
         </section>
       </div>
     </div>

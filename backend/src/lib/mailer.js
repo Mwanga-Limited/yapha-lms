@@ -1,7 +1,7 @@
 import { formatMoney } from './money.js';
 import nodemailer from 'nodemailer';
 import { config } from '../config.js';
-import { currentTenant, settingsOf, tenantName } from './tenant.js';
+import { PLATFORM_BRAND, currentTenant, settingsOf, tenantName } from './tenant.js';
 
 /** Emails sent while MAIL_TRANSPORT=memory (used by the tests). */
 export const outbox = [];
@@ -17,7 +17,7 @@ if (config.mail.transport === 'smtp') {
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function layout(title, paragraphs, action) {
-  const brand = currentTenant() ? settingsOf(currentTenant()).branding.primaryColor : '#17324d';
+  const brand = currentTenant() ? settingsOf(currentTenant()).branding.primaryColor : PLATFORM_BRAND.primaryColor;
   const btn = action
     ? `<p style="margin:28px 0"><a href="${esc(action.url)}" style="background:${brand};color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:600">${esc(action.label)}</a></p>
        <p style="color:#6b6b6b;font-size:13px">Or open this link: ${esc(action.url)}</p>`
@@ -27,7 +27,7 @@ function layout(title, paragraphs, action) {
     ${paragraphs.map((p) => `<p style="font-family:Arial,sans-serif;line-height:1.5">${esc(p)}</p>`).join('')}
     ${btn}
     <hr style="border:none;border-top:1px solid #e5e1d8;margin-top:32px"/>
-    <p style="font-family:Arial,sans-serif;color:#8a8a8a;font-size:12px">${esc(currentTenant() ? tenantName(currentTenant()) : 'E-Learning platform')}</p></div>`;
+    <p style="font-family:Arial,sans-serif;color:#8a8a8a;font-size:12px">${esc(currentTenant() ? tenantName(currentTenant()) : `${PLATFORM_BRAND.name} platform`)}</p></div>`;
 }
 
 export async function sendMail({ to, subject, title, paragraphs = [], action }) {
@@ -83,16 +83,16 @@ export const emails = {
     action: { label: 'Go to Teach', url: url('/teach') } }),
   enrolled: (u, course) => sendMail({ to: u.email, subject: `You're enrolled: ${course.title}`, title: 'Enrolment confirmed',
     paragraphs: [`You are enrolled in "${course.title}". Happy learning!`],
-    action: { label: 'Start learning', url: url(`/learn/${course.id}`) } }),
+    action: { label: 'Start learning', url: url(`/learn/${course.slug}`) } }),
   quizResult: (u, course, quiz, score, passed, state) => sendMail({ to: u.email,
     subject: `Quiz result: ${quiz.title} — ${passed ? 'passed' : 'not passed'}`, title: passed ? 'Quiz passed' : 'Quiz not passed',
     paragraphs: [`You scored ${score}% on "${quiz.title}" in "${course.title}". The pass mark is ${settingsOf(currentTenant()).quiz.passMark}%.`,
       passed ? 'Well done.' : state.lockedUntil ? `You have used all ${settingsOf(currentTenant()).quiz.maxAttempts} attempts. The quiz unlocks at ${new Date(state.lockedUntil).toUTCString()}.` : `Attempts left: ${state.attemptsLeft}.`],
-    action: { label: 'Back to course', url: url(`/learn/${course.id}`) } }),
+    action: { label: 'Back to course', url: url(`/learn/${course.slug}`) } }),
   paymentReceipt: (u, course, payment) => sendMail({ to: u.email, subject: `Payment received: ${course.title}`, title: 'Payment received',
     paragraphs: [`We received your payment of ${formatMoney(payment.amount_minor, payment.currency)} for "${course.title}". You now have full access to the course.`,
       `Payment reference: ${payment.reference}`],
-    action: { label: 'Start learning', url: url(`/learn/${course.id}`) } }),
+    action: { label: 'Start learning', url: url(`/learn/${course.slug}`) } }),
   certificate: (u, cert) => sendMail({ to: u.email, subject: `Certificate issued: ${cert.course_title}`, title: 'Congratulations!',
     paragraphs: [`You completed "${cert.course_title}". Your certificate verification code is ${cert.code}.`],
     action: { label: 'View certificate', url: url(`/verify/${cert.code}`) } }),

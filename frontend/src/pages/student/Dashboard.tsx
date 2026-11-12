@@ -5,14 +5,14 @@ import { formatMoney } from '../../money';
 import { Empty, ErrorState, Loading, ProgressBar, fmtDate, useDocumentTitle, useLoad } from '../../ui';
 
 interface DashCourse {
-  id: string; title: string; summary: string; category: string; teacherName: string; thumbnailUrl: string | null; courseStatus: string;
+  id: string; slug: string; title: string; summary: string; category: string; teacherName: string; thumbnailUrl: string | null; courseStatus: string;
   enrolledAt: string; completedAt: string | null; lastAccessedAt: string | null;
   resume: { id: string; title: string; kind: string } | null;
   progress: { percent: number; done: number; total: number };
   certificate: { code: string; revoked: boolean } | null;
 }
 
-interface Receipt { id: string; reference: string; amount: number; currency: string; paidAt: string; course: { id: string; title: string } }
+interface Receipt { id: string; reference: string; amount: number; currency: string; paidAt: string; course: { id: string; slug: string; title: string } }
 
 export function Dashboard() {
   useDocumentTitle('My learning');
@@ -40,7 +40,7 @@ export function Dashboard() {
             <h2>{next.title}</h2>
             {next.resume && <p className="muted">Last opened: {next.resume.title}</p>}
             <ProgressBar percent={next.progress.percent} label={`${next.title} progress`} />
-            <Link className="btn btn-primary" to={`/learn/${next.id}${next.resume ? `?item=${next.resume.id}` : ''}`}>Resume course</Link>
+            <Link className="btn btn-primary" to={`/learn/${next.slug}${next.resume ? `?item=${next.resume.id}` : ''}`}>Resume course</Link>
           </div>
         </section>
       )}
@@ -59,11 +59,11 @@ export function Dashboard() {
             {inProgress.slice(1).map((c) => (
               <li key={c.id} className="my-row">
                 <div className="my-main">
-                  <Link to={`/learn/${c.id}`}><strong>{c.title}</strong></Link>
+                  <Link to={`/learn/${c.slug}`}><strong>{c.title}</strong></Link>
                   <span className="muted small">{c.teacherName} · {c.progress.done} of {c.progress.total} done</span>
                   <ProgressBar percent={c.progress.percent} label={`${c.title} progress`} />
                 </div>
-                <Link className="btn btn-secondary btn-sm" to={`/learn/${c.id}${c.resume ? `?item=${c.resume.id}` : ''}`}>Continue</Link>
+                <Link className="btn btn-secondary btn-sm" to={`/learn/${c.slug}${c.resume ? `?item=${c.resume.id}` : ''}`}>Continue</Link>
               </li>
             ))}
           </ul>
@@ -77,7 +77,7 @@ export function Dashboard() {
             {done.map((c) => (
               <li key={c.id} className="my-row">
                 <div className="my-main">
-                  <Link to={`/learn/${c.id}`}><strong>{c.title}</strong></Link>
+                  <Link to={`/learn/${c.slug}`}><strong>{c.title}</strong></Link>
                   <span className="muted small">Completed {fmtDate(c.completedAt)}</span>
                   {c.certificate && (c.certificate.revoked
                     ? <span className="badge badge-rejected">Certificate revoked</span>
@@ -101,7 +101,7 @@ export function Dashboard() {
             {receipts.data!.payments.map((p) => (
               <li key={p.id} className="my-row">
                 <div className="my-main">
-                  <Link to={`/learn/${p.course.id}`}><strong>{p.course.title}</strong></Link>
+                  <Link to={`/learn/${p.course.slug}`}><strong>{p.course.title}</strong></Link>
                   <span className="muted small">{formatMoney(p.amount, p.currency)} · paid {fmtDate(p.paidAt)} · reference {p.reference}</span>
                 </div>
               </li>

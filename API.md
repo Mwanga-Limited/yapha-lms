@@ -324,6 +324,20 @@ Related changes:
 - `courses` `publish` refuses a course with no price (409 `PRICE_REQUIRED`). The catalogue only lists priced courses.
 - Courses now include `price`, `suggestedPrice` (both in kobo) and `currency`.
 
+## 12. Referrals
+
+| Endpoint | Action | Who | Data | Result |
+|---|---|---|---|---|
+| `payments` | `checkout` | Student | add `"referralCode": "PY8EFB2Q"` (optional) | the payment (and, once paid, the enrolment) records the referrer. Unknown code, or an Admin's or another organisation's → 400 `INVALID_REFERRAL`; the learner's own code → 400 `OWN_REFERRAL` |
+| `account` | `referrals` | Teacher, Student | none | `code`, `link`, `count` (enrolments with the code), `courses`: per course `{ course, count, referrals: [name, email with most of it hidden, date] }` |
+| `admin` | `referrals` | Admin | `{ "q": "", "page": 1 }` | each member whose code was used, with `count` and `courses` (per course: count and referrals with full emails); `totals` |
+
+Sign-up (`auth` `register` / `google`) no longer takes a referral code.
+
+## 13. Course slugs
+
+Courses include `slug` (e.g. `bookkeeping-for-small-businesses`). `courses` `detail` and `learn` `player` accept the slug or the ID as `id` / `courseId`. Other actions take the ID.
+
 ## Health check
 
 `GET http://localhost:4000/api/health` → `{ "ok": true }`

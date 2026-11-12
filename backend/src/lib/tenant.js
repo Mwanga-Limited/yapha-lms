@@ -5,18 +5,25 @@ import { currentScope, withScope } from '../db.js';
  * Per-organisation configuration. Same business rules for everyone; these values are what each
  * organisation may change. Defaults reproduce the original Phase 1 rules (70% pass mark, 3 attempts, 24h lock).
  */
+/**
+ * Yapha is the platform's brand: the platform's own pages and emails use it, and it is the starting branding of
+ * every organisation. An organisation's own settings (logo, name, colours, header) replace it; anything an
+ * organisation hasn't set falls back to Yapha's.
+ */
+export const PLATFORM_BRAND = Object.freeze({ name: 'Yapha', accentColor: '#FF950D', primaryColor: '#030027', header: 'light' });
+
 /** Currencies Paystack accepts. */
 export const CURRENCIES = ['NGN', 'GHS', 'ZAR', 'KES', 'USD'];
-const hex = z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, 'Use a colour like #F2CC3D');
+const hex = z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, 'Use a colour like #FF950D');
 const domain = z.string().trim().toLowerCase().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, 'Enter a domain like acme.com');
 
 export const settingsSchema = z.object({
   branding: z.object({
     displayName: z.string().trim().max(80).default(''),          // shown instead of the organisation name when set
     logoFileId: z.string().uuid().nullable().default(null),
-    accentColor: hex.default('#F2CC3D'),                          // highlights, progress, main call to action
-    primaryColor: hex.default('#17324D'),                         // structure: header, headings, buttons (a dark colour)
-    header: z.enum(['dark', 'light']).default('dark'),           // light suits logos with dark lettering
+    accentColor: hex.default(PLATFORM_BRAND.accentColor),         // highlights, progress, main call to action
+    primaryColor: hex.default(PLATFORM_BRAND.primaryColor),       // structure: header, headings, buttons (a dark colour)
+    header: z.enum(['dark', 'light']).default(PLATFORM_BRAND.header),   // light suits logos with dark lettering
   }).prefault({}),
   quiz: z.object({
     passMark: z.number().int().min(1).max(100).default(70),      // QZ-01
@@ -38,7 +45,7 @@ export const settingsSchema = z.object({
 
 export const defaultSettings = () => settingsSchema.parse({});
 export const settingsOf = (tenant) => settingsSchema.parse(tenant?.settings ?? {});
-export const tenantName = (tenant) => settingsOf(tenant).branding.displayName || tenant?.name || 'E-Learning';
+export const tenantName = (tenant) => settingsOf(tenant).branding.displayName || tenant?.name || PLATFORM_BRAND.name;
 
 /** The current request's organisation (set by the tenant router). */
 export const currentTenant = () => currentScope()?.tenant ?? null;

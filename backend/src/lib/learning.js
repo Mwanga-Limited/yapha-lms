@@ -7,12 +7,13 @@ import { emails } from './mailer.js';
 import { notify } from './notify.js';
 import { currentTenant, settingsOf, tenantName } from './tenant.js';
 
-export async function loadCourseWithLive(db, courseId) {
+/** courseRef: the course's ID or its slug (the readable name in its web address). */
+export async function loadCourseWithLive(db, courseRef) {
   const { rows } = await db.query(
     `SELECT c.*, v.content AS live_content, u.name AS teacher_name
        FROM courses c LEFT JOIN course_versions v ON v.id = c.live_version_id
        JOIN users u ON u.id = c.teacher_id
-      WHERE c.id = $1`, [courseId]);
+      WHERE c.id::text = $1 OR c.slug = $1`, [courseRef]);
   return rows[0] ?? null;
 }
 

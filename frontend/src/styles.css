@@ -1,20 +1,20 @@
-/* Learn — visual system
-   Ink (slate) for structure, paper for ground, one highlighter yellow for progress and "you are here". */
+/* Visual system. The defaults are Yapha's brand (navy #030027 for structure, orange #FF950D as the highlighter for
+   progress and "you are here"); an organisation's own colours replace them (see applyBranding in auth.tsx). */
 :root {
-  --ink: #17324d;
-  --ink-2: #3c5570;
-  --ink-3: #6b7f93;
+  --ink: #030027;
+  --ink-2: #302e4e;
+  --ink-3: #636179;
   --line: #ece8e1;
   --line-2: #ddd6ca;
   --paper: #fbfaf7;
   --card: #ffffff;
   --wash: #eef2f5;
-  --hl: #f2cc3d;
-  --hl-soft: #fbefc0;
-  --hl-ink: #8a6a00;     /* the accent darkened, for small text on light backgrounds */
-  --hl-strong: #b8930a; /* the accent slightly darkened, for large headline words */
-  --hl-wash: #fef9e8;    /* the accent at 10%, for wide backgrounds */
-  --hl-dot: #f5df9a;
+  --hl: #ff950d;
+  --hl-soft: #ffe1bb;
+  --hl-ink: #995908;     /* the accent darkened, for small text on light backgrounds */
+  --hl-strong: #cc770a; /* the accent slightly darkened, for large headline words */
+  --hl-wash: #fff4e7;    /* the accent at 10%, for wide backgrounds */
+  --hl-dot: #ffd59e;
   --ok: #2d7a55;
   --ok-soft: #e3f1e9;
   --warn: #8a5a00;
@@ -550,9 +550,9 @@ fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; }
 .super-chip { background: rgba(255,255,255,.12); color: #fff !important; border: 1px dashed rgba(255,255,255,.45); border-radius: 999px; padding: 5px 12px !important; font-size: var(--step--1); }
 
 /* platform console: same system, darker bar with a ruled edge so it's never mistaken for an organisation's site */
-.topbar-platform { background: #0f2539; box-shadow: inset 0 -4px 0 #f2cc3d; }
-.topbar-platform .brand-mark { background: #f2cc3d; }
-.platform-nav a.active { box-shadow: inset 0 -3px 0 #f2cc3d; }
+.topbar-platform .brand-name { font-size: 1rem; font-weight: 600; color: var(--ink-3); border-left: 1px solid var(--line-2); padding-left: 12px; }
+.platform-logo { height: 40px; width: auto; display: block; }
+.landing-card .platform-logo { height: 44px; margin: 0 0 18px; }
 
 /* landing: find your organisation */
 .landing { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--paper);
@@ -766,3 +766,21 @@ fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; }
 .price-panel form { align-items: flex-end; }
 .price-panel .field { margin-bottom: 0; min-width: 200px; }
 .webhook-field { margin-top: 20px; }
+
+/* ---- referrals */
+.referral-panel { margin-top: 24px; }
+.referral-share { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); margin: 12px 0 20px; }
+@media (max-width: 720px) { .referral-share { grid-template-columns: minmax(0, 1fr); } }
+.referral-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }
+.referral-code { font-size: 1.25rem; font-weight: 700; letter-spacing: .12em; padding: 4px 10px; background: var(--hl-wash, #f7f3e8); border-radius: 8px; }
+.referral-row .key-hint { flex: 1 1 220px; min-width: 0; padding: 6px 8px; background: var(--wash, #f4f4f4); border-radius: 6px; }
+.referral-count { margin: 0 0 10px; font-size: 1rem; }
+.referrer-row td { vertical-align: top; }
+.referees-table { margin-top: 8px; }
+@media (max-width: 600px) { .referral-panel .hide-sm { display: none; } .referral-panel .table td, .referral-panel .table th { padding-left: 8px; padding-right: 8px; } }
+.referral-field { margin: 0; width: 100%; max-width: 280px; }
+.referral-field input { text-transform: uppercase; letter-spacing: .06em; }
+.referral-totals { margin: 0 0 14px; }
+.course-referrals { margin: 0 0 18px; }
+.course-referrals h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 1rem; }
+.referees-table { padding: 4px 0; }

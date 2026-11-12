@@ -16,7 +16,7 @@ export function Leaf({ className, color = 'currentColor' }: { className?: string
 export function CourseCard({ c }: { c: CourseMeta & { teacherName: string; lessonCount?: number; quizCount?: number; learners?: number } }) {
   const lessons = c.lessonCount != null ? `${c.lessonCount} ${c.lessonCount === 1 ? 'lesson' : 'lessons'}` : null;
   return (
-    <Link to={`/courses/${c.id}`} className="course-card">
+    <Link to={`/courses/${c.slug}`} className="course-card">
       <div className="course-card-body">
         <span className="course-cat">{c.category}</span>
         <h3>{c.title}</h3>

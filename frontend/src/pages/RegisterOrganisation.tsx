@@ -1,3 +1,4 @@
+import { YaphaLogo } from '../components/YaphaLogo';
 import { useEffect, useState, type FormEvent } from 'react';
 import { errorMessage, organisationsApi } from '../api';
 import { PasswordInput } from '../components/PasswordInput';
@@ -56,7 +57,7 @@ export function RegisterOrganisation() {
     return (
       <main className="landing">
         <div className="landing-card">
-          <span className="brand-mark" aria-hidden />
+          <YaphaLogo />
           <h1>{done.organisation.name} is ready</h1>
           <p>Your learning site is <strong>{host}{done.organisation.url}</strong>. Save this address and share it with your teachers and students.</p>
           <p>You are its first Admin. Your member ID is <code>{done.admin.memberCode}</code>.</p>
@@ -70,7 +71,7 @@ export function RegisterOrganisation() {
   return (
     <main className="landing">
       <div className="landing-card landing-card-wide">
-        <span className="brand-mark" aria-hidden />
+        <YaphaLogo />
         <h1>Register your organisation</h1>
         <p className="muted">Create a learning site for your school, company or academy. You’ll be its first Admin and can invite teachers and students straight away.</p>
         {open === false ? (
