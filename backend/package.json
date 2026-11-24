@@ -38,7 +38,7 @@
     "outbox:worker": "node src/scripts/outbox-worker.js"
   },
   "dependencies": {
-    "@google-cloud/storage": "^8.4.0",
+    "@google-cloud/storage": "^9.0.0",
     "@logtail/node": "^0.6.1",
     "@sentry/node": "^11.16.0",
     "bcryptjs": "^3.0.3",
