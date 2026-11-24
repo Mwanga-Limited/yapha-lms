@@ -1,6 +1,12 @@
 version: 2
 updates:
-  - { package-ecosystem: npm, directory: /backend, schedule: { interval: weekly }, open-pull-requests-limit: 5 }
+  - package-ecosystem: npm
+    directory: /backend
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    ignore:
+      # otplib 13 removed the `authenticator` API that the two-step sign-in code uses. Move to it deliberately, not by an automatic bump.
+      - { dependency-name: otplib, update-types: [version-update:semver-major] }
   - { package-ecosystem: npm, directory: /frontend, schedule: { interval: weekly }, open-pull-requests-limit: 5 }
   - { package-ecosystem: github-actions, directory: /, schedule: { interval: weekly } }
   - { package-ecosystem: docker, directory: /, schedule: { interval: weekly } }

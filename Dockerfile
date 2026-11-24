@@ -22,7 +22,10 @@ RUN npm ci --omit=dev
 FROM node:26-alpine
 # postgresql-client: pg_dump / psql for the backup and restore jobs (the same image runs the app, migrations and backups).
 # The client must be the same major version as the server (Neon runs 18): pg_dump refuses to dump a newer server.
-RUN apk add --no-cache postgresql18-client
+RUN apk add --no-cache postgresql18-client \
+    # Nothing here runs npm or yarn (the app and every job start with `node`). The copies bundled with the base image only add
+    # vulnerability findings, so they are removed.
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /opt/yarn* /usr/local/bin/yarn*
 ENV NODE_ENV=production \
     PORT=8080 \
     UPLOAD_DIR=/data/uploads \
