@@ -41,6 +41,8 @@ export function createApp() {
   });
   app.use(helmet({
     crossOriginEmbedderPolicy: false,
+    // Helmet's default ("same-origin") cuts the Google sign-in popup off from this page, so it ends on a blank screen.
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
     contentSecurityPolicy: {
       directives: {
         'default-src': ["'self'"],

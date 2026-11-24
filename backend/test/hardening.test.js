@@ -137,6 +137,13 @@ describe('Links are http(s) only (F-18)', () => {
   });
 });
 
+describe('Google sign-in popup', () => {
+  test('the opener policy lets the Google popup hand its credential back to the page', async () => {
+    const r = await request(app).get('/api/health');
+    assert.equal(r.headers['cross-origin-opener-policy'], 'same-origin-allow-popups');
+  });
+});
+
 describe('Observability', () => {
   test('every response carries a request id, and errors repeat it', async () => {
     const ok = await request(app).post(api('auth')).send({ action: 'me' });
