@@ -1,5 +1,9 @@
 -- The organisation that held all pre-multitenancy data becomes "Yapha" at /t/yapha.
 -- Runs only if it is still called "default" (safe on fresh and already-renamed databases).
+-- Row-level security is forced on every table, so a database user that is not a superuser would update zero rows here
+-- (and not notice). The flag lasts for this migration's transaction only.
+SELECT set_config('app.bypass', 'on', true);
+
 DO $$
 DECLARE t uuid := (SELECT id FROM tenants WHERE slug = 'default');
 BEGIN

@@ -4,15 +4,15 @@ import { config } from '../config.js';
 import { query, withScope } from '../db.js';
 import { apiBase, currentTenant } from './tenant.js';
 
-export const PLATFORM_COOKIE = 'el_platform';
+export const PLATFORM_COOKIE = 'yapha_platform';
 export const PRIVILEGED = ['admin', 'teacher']; // AD-07: must use 2FA
 
 /*
- * One session cookie per organisation (el_<slug>) plus one for the platform super admin (el_platform).
+ * One session cookie per organisation (yapha_<slug>) plus one for the platform super admin (yapha_platform).
  * Each token carries the organisation id (tid) and is only accepted by that organisation, so a session
  * from one organisation is worthless in another. People can be signed in to several organisations at once.
  */
-const cookieName = (tenant) => (tenant ? `el_${tenant.slug}` : PLATFORM_COOKIE);
+const cookieName = (tenant) => (tenant ? `yapha_${tenant.slug}` : PLATFORM_COOKIE);
 
 const cookieOpts = () => ({
   httpOnly: true, sameSite: 'strict', secure: config.cookieSecure, path: '/',

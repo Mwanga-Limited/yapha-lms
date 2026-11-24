@@ -1,27 +1,55 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import net from 'node:net';
 import pg from 'pg';
 import { config } from './config.js';
+import { logger } from './lib/logger.js';
 
 // Return numeric columns as JS numbers and bigint counts as numbers.
 pg.types.setTypeParser(1700, (v) => (v === null ? null : Number(v)));
 pg.types.setTypeParser(20, (v) => (v === null ? null : Number(v)));
 
-export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 });
+// Node tries a host's addresses in a race and gives each only 250 ms by default. A remote database (Neon, over a network
+// without IPv6, such as WSL) then fails with ETIMEDOUT/ENETUNREACH before a single address has had time to answer.
+net.setDefaultAutoSelectFamilyAttemptTimeout(3000);
+
+// 20 s covers a serverless database waking from suspend (Neon's first connection after idle takes several seconds).
+export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: config.dbPoolMax, connectionTimeoutMillis: 20_000, idleTimeoutMillis: 30_000 });
 
 /*
  * Tenant scope.
  * Every API request runs inside ONE database transaction that:
- *   1. switches to the restricted role "elearning_app" (row-level security always applies), and
+ *   1. switches to the restricted role "yapha_app" (row-level security always applies), and
  *   2. sets app.tenant_id to the request's organisation, or app.bypass = on for the platform super admin.
  * PostgreSQL then only returns and accepts rows of that organisation, whatever the SQL says.
  * The scope (client, tenant, flags) lives in AsyncLocalStorage, so route code keeps calling query()/tx().
  */
 const als = new AsyncLocalStorage();
+
+// Maintenance scripts (not the API) set YAPHA_DB_BYPASS=on to read and write across organisations. It is applied with
+// set_config inside each transaction, not as a connection startup option: poolers (Neon's -pooler endpoint, PgBouncer)
+// reject unknown startup parameters and do not keep session settings between transactions.
+const scriptBypass = () => process.env.YAPHA_DB_BYPASS === 'on';
+const setBypass = (c) => c.query(`SELECT set_config('app.bypass', 'on', true)`);
+const poolQuery = pool.query.bind(pool);
+pool.query = async (...args) => {
+  if (!scriptBypass()) return poolQuery(...args);
+  const c = await pool.connect();
+  try {
+    await c.query('BEGIN');
+    await setBypass(c);
+    const r = await c.query(...args);
+    await c.query('COMMIT');
+    return r;
+  } catch (err) {
+    await c.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally { c.release(); }
+};
 export const currentScope = () => als.getStore() ?? null;
 
 async function openScoped(client, scope) {
   await client.query('BEGIN');
-  await client.query('SET LOCAL ROLE elearning_app');
+  await client.query('SET LOCAL ROLE yapha_app');
   await client.query(`SELECT set_config('app.tenant_id', $1, true), set_config('app.bypass', $2, true)`,
     [scope.tenant?.id ?? '', scope.bypass ? 'on' : '']);
 }
@@ -45,7 +73,7 @@ export async function withScope(scope, fn) {
       client.release();
       released = true;
       // Records that must outlive a refused request (failed sign-ins, blocked attempts) are written again.
-      for (const replay of store.onRollback) await withScope(scope, replay).catch((e) => console.error('[audit replay]', e.message));
+      for (const replay of store.onRollback) await withScope(scope, replay).catch((e) => logger.error('audit replay failed', { err: e }));
       throw err;
     }
     await client.query('COMMIT');
@@ -106,6 +134,7 @@ export async function tx(fn) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    if (scriptBypass()) await setBypass(client);
     const result = await fn(client);
     await client.query('COMMIT');
     return result;

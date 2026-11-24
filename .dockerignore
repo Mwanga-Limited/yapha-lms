@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+.git
+.github
+backend/.env
+backend/uploads
+backend/test
+frontend/tsconfig.tsbuildinfo
+backups
+deploy/.env.production
+postman
+*.md

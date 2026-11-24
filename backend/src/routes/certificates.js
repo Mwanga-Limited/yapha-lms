@@ -1,8 +1,7 @@
-import path from 'node:path';
-import { config } from '../config.js';
 import { query } from '../db.js';
 import { fail } from '../lib/errors.js';
 import { certificatePdf } from '../lib/learning.js';
+import { storage } from '../lib/storage.js';
 import { currentTenant, settingsOf } from '../lib/tenant.js';
 
 /** GET /api/:tenant/certificates/:code — public verification inside the issuing organisation.
@@ -16,10 +15,11 @@ export async function certificateHandler(req, res) {
     if (c.revoked_at) fail(410, 'This certificate has been revoked');
     const tenant = currentTenant();
     const logoId = settingsOf(tenant).branding.logoFileId;
-    const logo = logoId ? (await query(`SELECT storage_name FROM files WHERE id = $1`, [logoId])).rows[0] : null;
+    const logoRow = logoId ? (await query(`SELECT * FROM files WHERE id = $1 AND status = 'ready'`, [logoId])).rows[0] : null;
+    const logo = logoRow ? await storage.readBuffer(logoRow).catch(() => null) : null;
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', `${req.query.download !== undefined ? 'attachment' : 'inline'}; filename="certificate-${c.code}.pdf"`);
-    certificatePdf(c, { tenant, logoPath: logo ? path.join(config.uploadDir, logo.storage_name) : null }).pipe(res);
+    certificatePdf(c, { tenant, logo }).pipe(res);
     return undefined;
   }
   return {

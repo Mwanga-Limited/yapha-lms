@@ -1,9 +1,10 @@
 import bcrypt from 'bcryptjs';
 import { authenticator } from 'otplib';
+import { checkSetupCode, clearRecoveryCodes, issueRecoveryCodes, seal, verifySecondFactor } from '../lib/totp.js';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 import { config } from '../config.js';
-import { asTenant, db, query, runInContext, tx } from '../db.js';
+import { asTenant, db, query, tx } from '../db.js';
 import { actionEndpoint, email, id, page, password, reqStr, str } from '../lib/actions.js';
 import { audit } from '../lib/audit.js';
 import { fail, notFound } from '../lib/errors.js';
@@ -102,7 +103,7 @@ async function inviteIntoTenant(ctx, tenant, { name, email: em, role, isRoot = f
       `INSERT INTO users (tenant_id, email, name, role, is_root) VALUES ($1,$2,$3,$4,$5) RETURNING *`, [tenant.id, em, name, role, isRoot]);
     const token = await issueUserToken(db, u.id, 'invite', 7 * 24 * 60);
     await audit(db, ctx, { action: 'user.invite', targetType: 'user', targetId: u.id, newValues: { email: em, role, firstAdmin: isRoot, by: 'platform' } });
-    ctx.after(() => runInContext({ tenant }, () => emails.invite(u, token, 'The platform administrator')));
+    await emails.invite(u, token, 'The platform administrator');   // queued inside this transaction, in the organisation's context
     return u;
   });
 }
@@ -132,19 +133,17 @@ export const platformRoutes = actionEndpoint({
         ctx.after(() => emails.mfaCode(u, code));
         emailHint = hint(u.email);
       }
-      return { mfa: { token: signMfaToken(u), method: u.totp_enabled ? 'totp' : 'email', emailHint } };
+      return { mfa: { token: signMfaToken(u), method: u.totp_enabled ? 'totp' : 'email', emailHint, recovery: !!u.totp_enabled } };
     },
   },
 
   verifyMfa: {
     auth: 'public',
-    schema: z.object({ token: z.string(), code: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code') }),
+    schema: z.object({ token: z.string(), code: z.string().trim().min(6, 'Enter your sign-in code').max(20) }),
     run: async (ctx) => {
       const u = await loadMfaSuper(ctx.data.token);
       if ((await recentPlatformCount('platform.mfa_failed', u.id)) >= config.loginMaxFailures) fail(429, 'Too many wrong codes. Try again in 15 minutes.');
-      let method = null;
-      if (u.totp_enabled && u.totp_secret && authenticator.check(ctx.data.code, u.totp_secret)) method = 'totp';
-      else if (await consumeUserToken(db, ctx.data.code, 'mfa_email', u.id)) method = 'email';
+      const method = await verifySecondFactor(db, u, ctx.data.code);
       if (!method) {
         await audit(null, ctx, { action: 'platform.mfa_failed', targetType: 'user', targetId: u.id, actor: u });
         fail(401, 'That code is not correct');
@@ -160,6 +159,7 @@ export const platformRoutes = actionEndpoint({
     schema: z.object({ token: z.string() }),
     run: async (ctx) => {
       const u = await loadMfaSuper(ctx.data.token);
+      if (u.totp_enabled) fail(400, 'Use your authenticator app, or one of your recovery codes.', { code: 'TOTP_REQUIRED' });
       const code = randomCode();
       await issueUserToken(db, u.id, 'mfa_email', 10, code);
       ctx.after(() => emails.mfaCode(u, code));
@@ -194,7 +194,7 @@ export const platformRoutes = actionEndpoint({
     run: async (ctx) => {
       if (ctx.user.totp_enabled) fail(400, 'Authenticator app is already enabled');
       const secret = authenticator.generateSecret();
-      await query(`UPDATE users SET totp_secret = $2 WHERE id = $1`, [ctx.user.id, secret]);
+      await query(`UPDATE users SET totp_secret = $2 WHERE id = $1`, [ctx.user.id, seal(secret)]);
       const uri = authenticator.keyuri(ctx.user.email, 'Yapha platform', secret);
       return { secret, uri, qr: await QRCode.toDataURL(uri, { margin: 1, width: 220 }) };
     },
@@ -205,10 +205,11 @@ export const platformRoutes = actionEndpoint({
     schema: z.object({ code: z.string().trim().regex(/^\d{6}$/) }),
     run: async (ctx) => {
       const { rows: [u] } = await query(`SELECT * FROM users WHERE id = $1`, [ctx.user.id]);
-      if (!u.totp_secret || !authenticator.check(ctx.data.code, u.totp_secret)) fail(400, 'That code is not correct. Check the time on your phone and computer.');
+      if (!checkSetupCode(u, ctx.data.code)) fail(400, 'That code is not correct. Check the time on your phone and computer.');
       const { rows: [n] } = await query(`UPDATE users SET totp_enabled = true WHERE id = $1 RETURNING *`, [u.id]);
+      const recoveryCodes = await issueRecoveryCodes({ query }, u.id);
       await audit({ query }, ctx, { action: 'platform.2fa_enabled', targetType: 'user', targetId: u.id });
-      return { user: publicUser(n) };
+      return { user: publicUser(n), recoveryCodes };
     },
   },
 

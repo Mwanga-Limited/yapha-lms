@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { config } from '../config.js';
 import { query, tx } from '../db.js';
 import { actionEndpoint, id, page, reqStr, str } from '../lib/actions.js';
 import { audit } from '../lib/audit.js';
@@ -8,6 +9,8 @@ import { emails } from '../lib/mailer.js';
 import { notify } from '../lib/notify.js';
 import { publicUser } from '../lib/security.js';
 import { currentTenant, emailAllowed, publicTenant, settingsOf, settingsSchema } from '../lib/tenant.js';
+import { reserveInvite } from '../lib/mailguard.js';
+import { clearRecoveryCodes } from '../lib/totp.js';
 import { issueUserToken } from '../lib/tokens.js';
 import { courseMeta, priceSchema } from './courses.js';
 import { toMinor } from '../lib/money.js';
@@ -38,6 +41,15 @@ const auditSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().or(z.literal('')),
   page,
 });
+
+/** Daily cap on invitations (lower for an organisation's first day), so the platform's email sender can't be used as a relay. */
+async function checkOrgInviteCap(db) {
+  const tenant = currentTenant();
+  const isNew = Date.now() - new Date(tenant.created_at).getTime() < 24 * 3600 * 1000;
+  const cap = isNew ? config.newOrgInvitesPerDay : config.invitesPerDay;
+  const { rows: [{ n: sent }] } = await db.query(`SELECT count(*)::int AS n FROM audit_logs WHERE action IN ('user.invite', 'user.invite_resend') AND created_at > now() - interval '24 hours'`);
+  if (sent >= cap) fail(429, `This organisation can send ${cap} invitations a day${isNew ? ' while it is new' : ''}. Try again tomorrow.`, { code: 'INVITE_LIMIT' });
+}
 
 const csvCell = (v) => {
   if (v == null) return '';
@@ -239,7 +251,7 @@ export const adminRoutes = actionEndpoint({
       const t = currentTenant();
       const next = ctx.data.settings;
       if (next.branding.logoFileId) {
-        const f = await query(`SELECT 1 FROM files WHERE id = $1 AND purpose = 'logo'`, [next.branding.logoFileId]);
+        const f = await query(`SELECT 1 FROM files WHERE id = $1 AND purpose = 'logo' AND status = 'ready'`, [next.branding.logoFileId]);
         if (!f.rowCount) fail(400, 'Upload the logo first');
       }
       const before = settingsOf(t);
@@ -255,18 +267,61 @@ export const adminRoutes = actionEndpoint({
   /** Invite someone into this organisation (the only way in when sign-up is invite-only). */
   inviteUser: {
     auth: ADMIN,
+    verified: true,   // an Admin must prove they own their email before inviting others from the platform's sender address
     schema: z.object({ name: reqStr(120), email: z.string().trim().toLowerCase().email('Enter a valid email').max(254), role: z.enum(['student', 'teacher']).default('student') }),
     run: async (ctx) => tx(async (db) => {
       const d = ctx.data;
+      // Daily cap on invitations (lower for an organisation's first day), so the platform's email sender can't be used as a relay.
+      await checkOrgInviteCap(db);
       if (!emailAllowed(currentTenant(), d.email)) fail(400, `This organisation only accepts ${settingsOf(currentTenant()).access.allowedDomains.map((x) => '@' + x).join(', ')} addresses`);
       const exists = await db.query(`SELECT 1 FROM users WHERE lower(email) = $1`, [d.email]);
       if (exists.rowCount) fail(409, 'Someone with this email is already a member of this organisation');
+      await reserveInvite(db, d.email);   // across ALL organisations: opted-out addresses and over-mailed addresses are refused
       const { rows: [u] } = await db.query(`INSERT INTO users (email, name, role) VALUES ($1,$2,$3) RETURNING *`, [d.email, d.name, d.role]);
       const token = await issueUserToken(db, u.id, 'invite', 7 * 24 * 60);
       await audit(db, ctx, { action: 'user.invite', targetType: 'user', targetId: u.id, newValues: { email: u.email, role: u.role, memberCode: u.member_code } });
       const inviter = ctx.user.isSuper ? 'The platform administrator' : ctx.user.name;
       ctx.after(() => emails.invite(u, token, inviter));
       return { user: publicUser(u) };
+    }),
+  },
+
+  /** A new invitation link for someone who has not accepted yet (the email was lost, or the link expired). */
+  resendInvite: {
+    auth: ADMIN,
+    verified: true,
+    schema: z.object({ userId: id }),
+    run: async (ctx) => tx(async (db) => {
+      const { rows: [u] } = await db.query(`SELECT * FROM users WHERE id = $1 FOR UPDATE`, [ctx.data.userId]);
+      if (!u) notFound('User');
+      if (u.password_hash || u.google_sub || u.email_verified_at || u.role === 'admin') fail(409, 'This person has already accepted, or was not invited by email');
+      if (!u.is_active) fail(409, 'Reactivate this account first');
+      await checkOrgInviteCap(db);
+      await reserveInvite(db, u.email);
+      const token = await issueUserToken(db, u.id, 'invite', 7 * 24 * 60);
+      await audit(db, ctx, { action: 'user.invite_resend', targetType: 'user', targetId: u.id, newValues: { email: u.email } });
+      const inviter = ctx.user.isSuper ? 'The platform administrator' : ctx.user.name;
+      ctx.after(() => emails.invite(u, token, inviter));
+      return { ok: true };
+    }),
+  },
+
+  /** Someone lost their authenticator app and recovery codes: remove it so they can sign in with emailed codes and set it up again. */
+  resetTwoFactor: {
+    auth: ADMIN,
+    schema: z.object({ userId: id, reason: reqStr(500, 3) }),
+    run: async (ctx) => tx(async (db) => {
+      const { rows: [t] } = await db.query(`SELECT * FROM users WHERE id = $1 FOR UPDATE`, [ctx.data.userId]);
+      if (!t) notFound('User');
+      if (t.id === ctx.user.id) fail(400, 'Use your own profile to change your authenticator app');
+      if (t.role === 'admin' && !ctx.user.isSuper) await blocked(ctx, 'user.2fa_reset_blocked', t, 'Only the platform administrator can reset another Admin\'s two-step sign-in (AD-04)', { reset2fa: true });
+      if (!t.totp_enabled) fail(409, 'This person does not use an authenticator app');
+      await db.query(`UPDATE users SET totp_enabled = false, totp_secret = NULL, totp_last_step = NULL, token_version = token_version + 1 WHERE id = $1`, [t.id]);
+      await clearRecoveryCodes(db, t.id);
+      await audit(db, ctx, { action: 'user.2fa_reset', targetType: 'user', targetId: t.id, newValues: { reason: ctx.data.reason, email: t.email } });
+      await notify(db, t.id, { type: 'account', title: 'Your two-step sign-in was reset', body: 'Sign in again. Codes now arrive by email; you can set up the authenticator app again in your profile.' });
+      ctx.after(() => emails.securityNotice(t, 'Your two-step sign-in was reset', ['An administrator removed the authenticator app from your account. Sign-in codes now arrive by email.']));
+      return { ok: true };
     }),
   },
 

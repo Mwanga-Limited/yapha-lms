@@ -8,6 +8,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config.js';
 import { pool, tx } from '../db.js';
+import { storage } from '../lib/storage.js';
+
+// Row-level security is forced on every table, so a database user that is not a superuser sees nothing here unless the
+// platform bypass flag is set. It is set for this script's own database sessions only (db.js applies it inside each transaction, so it also works through a connection pooler such as Neon's).
+process.env.YAPHA_DB_BYPASS = 'on';
 import { settingsOf } from '../lib/tenant.js';
 
 const SLUG = 'yapha';
@@ -23,13 +28,13 @@ try {
     let { rows: [file] } = await db.query(
       `SELECT id FROM files WHERE tenant_id = $1 AND purpose = 'logo' AND original_name = 'yapha-logo.png' ORDER BY created_at DESC LIMIT 1`, [t.id]);
     if (!file) {
-      fs.mkdirSync(config.uploadDir, { recursive: true });
-      const storage = `${crypto.randomUUID()}.png`;
-      fs.copyFileSync(LOGO, path.join(config.uploadDir, storage));
+      const storageName = `${crypto.randomUUID()}.png`;
+      const bytes = fs.readFileSync(LOGO);
+      await storage.put({ tenant_id: t.id, storage_name: storageName }, bytes, 'image/png');   // disk folder or the bucket, per STORAGE_DRIVER
       ({ rows: [file] } = await db.query(
         `INSERT INTO files (tenant_id, owner_id, original_name, mime_type, size_bytes, storage_name, visibility, purpose)
          VALUES ($1, NULL, 'yapha-logo.png', 'image/png', $2, $3, 'public', 'logo') RETURNING id`,
-        [t.id, fs.statSync(LOGO).size, storage]));
+        [t.id, bytes.length, storageName]));
     }
     const before = settingsOf(t);
     const settings = { ...before, branding: { ...before.branding, ...BRAND, logoFileId: file.id } };

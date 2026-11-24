@@ -1,4 +1,4 @@
-import type { Content, Item } from '../api';
+import { safeHttpUrl, type Content, type Item } from '../api';
 import { plural } from '../ui';
 
 const kindLabel = (it: Item) => (it.kind === 'quiz' ? 'Quiz' : it.type === 'video' ? 'Video' : it.type === 'file' ? 'File' : 'Reading');
@@ -40,7 +40,7 @@ export function ContentPreview({ content, compareTo, fileUrls = {} }: { content:
                   <div className="preview-body">
                     {it.type === 'video' && (it.fileId
                       ? <video src={fileUrls[it.fileId]} controls preload="metadata" className="preview-video" />
-                      : <p>Video link: <a href={it.videoUrl} target="_blank" rel="noreferrer">{it.videoUrl || '—'}</a></p>)}
+                      : <p>Video link: {safeHttpUrl(it.videoUrl) ? <a href={safeHttpUrl(it.videoUrl)!} target="_blank" rel="noreferrer">{it.videoUrl}</a> : <span>{it.videoUrl || '—'}</span>}</p>)}
                     {it.type === 'file' && (it.fileId ? <p>File: <a href={fileUrls[it.fileId]} target="_blank" rel="noreferrer">{it.fileName || 'Open file'}</a></p> : <p className="muted">No file uploaded</p>)}
                     {it.body && <div className="prose">{it.body.split(/\n{2,}/).map((p, i) => <p key={i}>{p}</p>)}</div>}
                   </div>

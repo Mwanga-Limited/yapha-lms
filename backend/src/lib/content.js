@@ -31,7 +31,7 @@ const lesson = z.object({
   id: itemId, kind: z.literal('lesson'), title: text(200),
   type: z.enum(['video', 'text', 'file']),
   body: text(100_000),
-  videoUrl: text(1000),
+  videoUrl: text(1000).refine((v) => v === '' || /^https?:\/\//i.test(v), 'Video links must start with http:// or https://'),
   fileId: z.string().uuid().nullable().default(null),
   fileName: text(255),
   preview: z.boolean().default(false),

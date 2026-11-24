@@ -24,12 +24,12 @@ test('authenticator app (TOTP) 2FA for a Teacher', async () => {
 
 test('private lesson files need a signed URL from an enrolled session', async () => {
   const t = await makeTeacher('File Teacher', root);
-  const up = await t.a.post(api('upload')).field('purpose', 'lesson_file').attach('file', Buffer.from('%PDF-1.4 test'), { filename: 'notes.pdf', contentType: 'application/pdf' }).expect(200);
+  const up = await t.a.post(api('upload') + '?purpose=lesson_file').attach('file', Buffer.from('%PDF-1.4 test'), { filename: 'notes.pdf', contentType: 'application/pdf' }).expect(200);
   const fileId = up.body.file.id;
   assert.equal(up.body.file.url, null);
   const s = await registerStudent('File Student');
-  await s.a.post(api('upload')).field('purpose', 'lesson_file').attach('file', Buffer.from('x'), { filename: 'x.pdf', contentType: 'application/pdf' }).expect(403);
-  await s.a.post(api('upload')).field('purpose', 'photo').attach('file', Buffer.from('x'), { filename: 'x.exe', contentType: 'application/x-msdownload' }).expect(400);
+  await s.a.post(api('upload') + '?purpose=lesson_file').attach('file', Buffer.from('x'), { filename: 'x.pdf', contentType: 'application/pdf' }).expect(403);
+  await s.a.post(api('upload') + '?purpose=photo').attach('file', Buffer.from('x'), { filename: 'x.exe', contentType: 'application/x-msdownload' }).expect(400);
 
   const content = sampleContent();
   content.sections[0].items.push({ id: 'f1', kind: 'lesson', title: 'Notes', type: 'file', fileId });

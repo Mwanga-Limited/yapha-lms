@@ -1,0 +1,88 @@
+# Production-style stack: PostgreSQL, a one-off migration step, and the app.
+#   cp deploy/.env.production.example deploy/.env.production   # fill in every value
+#   docker compose --env-file deploy/.env.production up -d --build
+# Put a TLS-terminating reverse proxy (nginx, Caddy, a cloud load balancer) in front of port 8080 and set TRUST_PROXY=1.
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?set POSTGRES_ADMIN_PASSWORD}   # bootstrap superuser, used only to create the app's database
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD}
+    volumes:
+      - dbdata:/var/lib/postgresql   # PostgreSQL 18+ keeps its data in a versioned folder below this path (mounting ../data fails)
+      - ./deploy/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: .
+    command: ["sh", "-c", "node src/scripts/migrate.js && node src/scripts/encrypt-totp-secrets.js"]
+    restart: "no"
+    environment: &appenv
+      DATABASE_URL: postgres://yapha:${APP_DB_PASSWORD}@db:5432/yapha_lms
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (32+ random characters)}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?set TOTP_ENCRYPTION_KEY (openssl rand -base64 32)}
+      TOTP_ENCRYPTION_KEY_PREVIOUS: ${TOTP_ENCRYPTION_KEY_PREVIOUS:-}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?set DATA_ENCRYPTION_KEY (openssl rand -base64 48)}
+      APP_URL: ${APP_URL:?set APP_URL (https://your.domain)}
+      MAIL_TRANSPORT: smtp
+      SMTP_HOST: ${SMTP_HOST:?set SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      ORG_SIGNUP: ${ORG_SIGNUP:-open}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SESSION_HOURS: ${SESSION_HOURS:-12}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      RATE_LIMIT_STORE: ${RATE_LIMIT_STORE:-postgres}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-100}
+      LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-5}
+      ORG_SIGNUP_PER_HOUR: ${ORG_SIGNUP_PER_HOUR:-5}
+      UPLOADS_PER_HOUR: ${UPLOADS_PER_HOUR:-60}
+      ORG_STORAGE_MB: ${ORG_STORAGE_MB:-5120}
+      INVITES_PER_DAY: ${INVITES_PER_DAY:-50}
+      NEW_ORG_INVITES_PER_DAY: ${NEW_ORG_INVITES_PER_DAY:-5}
+      BETTERSTACK_SOURCE_TOKEN: ${BETTERSTACK_SOURCE_TOKEN:-}
+      BETTERSTACK_INGESTING_HOST: ${BETTERSTACK_INGESTING_HOST:-}
+      BETTERSTACK_ERRORS_DSN: ${BETTERSTACK_ERRORS_DSN:-}
+    depends_on:
+      db: { condition: service_healthy }
+
+  app:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment: *appenv
+    ports:
+      - "4000:8080"
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits: { memory: 768M }
+
+  # Sends queued emails and retries failed ones (Cloud Scheduler does this on Google Cloud).
+  outbox:
+    build: .
+    restart: unless-stopped
+    init: true
+    command: ["node", "src/scripts/outbox-worker.js"]
+    environment: *appenv
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+volumes:
+  dbdata:
+  uploads:

@@ -1,18 +1,12 @@
 import { formatMoney } from './money.js';
-import nodemailer from 'nodemailer';
 import { config } from '../config.js';
+import { currentScope, db, withScope } from '../db.js';
+import { enqueue, deliverNow, memoryInbox } from './outbox.js';
+import { signStopToken } from './mailguard.js';
 import { PLATFORM_BRAND, currentTenant, settingsOf, tenantName } from './tenant.js';
 
 /** Emails sent while MAIL_TRANSPORT=memory (used by the tests). */
-export const outbox = [];
-
-let transporter = null;
-if (config.mail.transport === 'smtp') {
-  transporter = nodemailer.createTransport({
-    host: config.mail.host, port: config.mail.port, secure: config.mail.secure,
-    auth: config.mail.user ? { user: config.mail.user, pass: config.mail.pass } : undefined,
-  });
-}
+export const outbox = memoryInbox;
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -30,20 +24,27 @@ function layout(title, paragraphs, action) {
     <p style="font-family:Arial,sans-serif;color:#8a8a8a;font-size:12px">${esc(currentTenant() ? tenantName(currentTenant()) : `${PLATFORM_BRAND.name} platform`)}</p></div>`;
 }
 
-export async function sendMail({ to, subject, title, paragraphs = [], action }) {
-  const text = [title, '', ...paragraphs, action ? `\n${action.label}: ${action.url}` : ''].join('\n');
+/**
+ * Queue an email. Inside a request it joins the request's transaction (nothing is sent if the request is rolled back);
+ * once the request commits an immediate delivery attempt is made, and a scheduled worker retries anything that failed.
+ * kind: notice | invite | verify | reset | mfa. notAfterMinutes: do not send (or retry) after this long (sign-in codes).
+ */
+export async function sendMail({ to, subject, title, paragraphs = [], action, kind = 'notice', notAfterMinutes = null, footer = [] }) {
+  const text = [title, '', ...paragraphs, action ? `\n${action.label}: ${action.url}` : '', ...(footer.length ? ['', ...footer] : [])].join('\n');
   // Emails from an organisation show its name as the sender name; the sending address stays the platform's.
   const t = currentTenant();
   const addr = config.mail.from.match(/<([^>]+)>/)?.[1] ?? config.mail.from;
   const from = t ? `"${tenantName(t).replace(/"/g, '')}" <${addr}>` : config.mail.from;
-  const msg = { from, to, subject, text, html: layout(title || subject, paragraphs, action) };
-  try {
-    if (config.mail.transport === 'smtp') await transporter.sendMail(msg);
-    else if (config.mail.transport === 'memory') outbox.push(msg);
-    else console.log(`\n[mail] To: ${to}\n[mail] Subject: ${subject}\n${text}\n`);
-  } catch (err) {
-    console.error('[mail] failed to send', subject, 'to', to, err.message);
+  const message = { from, to, subject, text, html: layout(title || subject, [...paragraphs, ...footer], action) };
+  const scope = currentScope();
+  if (!scope?.client) {   // scripts: no request and no transaction, so queue and deliver straight away
+    const id = await withScope({ bypass: true }, () => enqueue(db, { kind, message, notAfterMinutes }));
+    await deliverNow([id]);
+    return id;
   }
+  const id = await enqueue(scope.client, { kind, message, notAfterMinutes });
+  scope.afterCommit?.push(() => deliverNow([id]));
+  return id;
 }
 
 // Links point into the organisation's own space: /<organisation>/...
@@ -55,18 +56,23 @@ export const emails = {
     paragraphs: [`${t.name} registered itself at /${t.slug}.`, `First Admin: ${admin.name} (${admin.email}).`,
       'No action is needed. You can review or suspend it in the platform console.'],
     action: { label: 'Open in the console', url: `${config.appUrl}/platform/organisations/${t.id}` } }),
-  invite: (u, token, inviterName) => sendMail({ to: u.email, subject: `You're invited to ${tenantName(currentTenant())}`, title: `Welcome to ${tenantName(currentTenant())}`,
-    paragraphs: [`${inviterName} invited you to join ${tenantName(currentTenant())} on the e-learning platform as a ${u.role}.`,
+  invite: (u, token, inviterName) => sendMail({ kind: 'invite', to: u.email, subject: `You're invited to ${tenantName(currentTenant())}`, title: `Welcome to ${tenantName(currentTenant())}`,
+    paragraphs: [`${inviterName} invited you to join ${tenantName(currentTenant())} on Yapha as a ${u.role}.`,
       `Your member ID is ${u.member_code ?? 'shown after you sign in'}.`, 'Choose a password to activate your account. This link expires in 7 days.'],
+    footer: [`This invitation was sent on behalf of ${tenantName(currentTenant())} by ${inviterName}. It is not from the platform itself.`,
+      `Not expecting it? Ignore this email, or stop invitations to this address: ${url(`/stop-emails?token=${signStopToken(u.email)}`)}`],
     action: { label: 'Accept invitation', url: url(`/reset-password?token=${token}&invite=1`) } }),
-  verify: (u, token) => sendMail({ to: u.email, subject: 'Verify your email', title: `Welcome, ${u.name}`,
+  verify: (u, token) => sendMail({ kind: 'verify', to: u.email, subject: 'Verify your email', title: `Welcome, ${u.name}`,
     paragraphs: ['Please confirm your email address. You need a verified email to enrol in or submit courses.', 'This link expires in 24 hours.'],
     action: { label: 'Verify email', url: url(`/verify-email?token=${token}`) } }),
-  reset: (u, token) => sendMail({ to: u.email, subject: 'Reset your password', title: 'Password reset',
+  reset: (u, token) => sendMail({ kind: 'reset', to: u.email, subject: 'Reset your password', title: 'Password reset',
     paragraphs: ['Someone asked to reset the password for your account. If this was not you, ignore this email.', 'This link expires in 60 minutes.'],
     action: { label: 'Choose a new password', url: url(`/reset-password?token=${token}`) } }),
-  mfaCode: (u, code) => sendMail({ to: u.email, subject: `Your sign-in code: ${code}`, title: 'Your sign-in code',
+  mfaCode: (u, code) => sendMail({ kind: 'mfa', notAfterMinutes: 10, to: u.email, subject: `Your sign-in code: ${code}`, title: 'Your sign-in code',
     paragraphs: [`Your two-factor sign-in code is ${code}.`, 'It expires in 10 minutes. Never share it with anyone.'] }),
+  securityNotice: (u, subject, lines) => sendMail({ to: u.email, subject, title: subject,
+    paragraphs: [...lines, 'If this was not you, reset your password and contact your administrator now.'],
+    action: { label: 'Open your account', url: url('/profile') } }),
   courseDecision: (u, course, approved, reason) => sendMail({ to: u.email,
     subject: approved ? `Approved: ${course.title}` : `Changes requested: ${course.title}`,
     title: approved ? 'Your course was approved' : 'Your course needs changes',

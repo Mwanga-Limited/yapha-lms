@@ -70,7 +70,7 @@ export const SLUG_RE = /^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/;
 // Organisation sites live at /<web address>, so these words are kept for the app's own pages and files.
 // Keep in sync with RESERVED_PATHS in frontend/src/api.ts.
 export const RESERVED_SLUGS = new Set([
-  'api', 'platform', 'register', 't', 'admin', 'www', 'static', 'assets', 'app', 'src', 'public',
+  'api', 'internal', 'platform', 'register', 't', 'admin', 'www', 'static', 'assets', 'app', 'src', 'public',
   'organisation', 'organisations', 'login', 'signup', 'sign-up', 'help', 'support', 'about', 'docs', 'status', 'health',
 ]);
 

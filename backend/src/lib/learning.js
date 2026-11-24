@@ -82,7 +82,7 @@ export async function revokeCertificateForEnrollment(db, ctx, enrollmentId, reas
 }
 
 /** Render a certificate as a landscape A4 PDF, branded for the issuing organisation. */
-export function certificatePdf(cert, { tenant, logoPath = null } = {}) {
+export function certificatePdf(cert, { tenant, logo = null } = {}) {
   const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 0, info: { Title: `Certificate ${cert.code}` } });
   const W = doc.page.width, H = doc.page.height;
   const green = settingsOf(tenant).branding.primaryColor, gold = settingsOf(tenant).branding.accentColor, ink = '#1c1c1c';
@@ -92,8 +92,8 @@ export function certificatePdf(cert, { tenant, logoPath = null } = {}) {
   doc.lineWidth(3).rect(28, 28, W - 56, H - 56).stroke(green);
   doc.lineWidth(0.8).rect(38, 38, W - 76, H - 76).stroke(gold);
 
-  if (logoPath) {
-    try { doc.image(logoPath, W / 2 - 60, 46, { fit: [120, 28], align: 'center', valign: 'center' }); } catch { /* unsupported image: skip */ }
+  if (logo) {   // a Buffer (read from storage) or a file path
+    try { doc.image(logo, W / 2 - 60, 46, { fit: [120, 28], align: 'center', valign: 'center' }); } catch { /* unsupported image: skip */ }
   }
   doc.fillColor(green).font('Helvetica-Bold').fontSize(13).text(issuer.toUpperCase(), 0, 80, { align: 'center', characterSpacing: 3 });
   doc.fillColor(ink).font('Times-Roman').fontSize(40).text('Certificate of Completion', 0, 112, { align: 'center' });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api } from '../../api';
+import { api, safeHttpUrl } from '../../api';
 import { Button, Empty, Loading, ReasonModal, StatusBadge, Tabs, fmtDate, useAction, useDocumentTitle, useLoad, useToast } from '../../ui';
 import { AdminNav } from './Dashboard';
 
@@ -30,7 +30,9 @@ export function AdminApplications() {
             </div>
             <p><span className="muted small">Expertise</span><br />{a.expertise}</p>
             <p className="pre">{a.bio}</p>
-            {a.credential_url && <p><a href={a.credential_url} target="_blank" rel="noreferrer noopener">Credential link</a> <span className="muted small">({new URL(a.credential_url).hostname})</span></p>}
+            {a.credential_url && (safeHttpUrl(a.credential_url)
+              ? <p><a href={safeHttpUrl(a.credential_url)!} target="_blank" rel="noreferrer noopener">Credential link</a> <span className="muted small">({new URL(a.credential_url).hostname})</span></p>
+              : <p className="muted small">Credential link (not a web address, so not shown as a link): {a.credential_url}</p>)}
             <p className="muted small">Applied {fmtDate(a.created_at)}{a.reviewed_at && ` · decided ${fmtDate(a.reviewed_at)} by ${a.reviewer_name}`}</p>
             {a.decision_reason && <p className="small">Reason: {a.decision_reason}</p>}
             {a.status === 'pending' && (

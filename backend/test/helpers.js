@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 (await import('dotenv')).default.config({ quiet: true });
-const testUrl = process.env.TEST_DATABASE_URL || 'postgres://postgres@localhost:5432/elearning_test';
+const testUrl = process.env.TEST_DATABASE_URL || 'postgres://postgres@localhost:5432/yapha_lms_test';
 if (process.env.DATABASE_URL && testUrl === process.env.DATABASE_URL) {
   throw new Error('TEST_DATABASE_URL must point to a separate database: the tests erase it.');
 }
@@ -12,11 +12,15 @@ if (!/test/i.test(new URL(testUrl).pathname)) {
   throw new Error(`Refusing to run: the test database name must contain "test" (got ${new URL(testUrl).pathname.slice(1)}).`);
 }
 process.env.NODE_ENV = 'test';
+process.env.APP_DB_USER = ''; // never inherit a developer's runtime role from backend/.env: the test server may not have it
+process.env.LOG_LEVEL = 'silent';
 process.env.DATABASE_URL = testUrl;
+delete process.env.DATABASE_URL_UNPOOLED; // tests only ever use the test database
 process.env.MAIL_TRANSPORT = 'memory';
 process.env.BCRYPT_ROUNDS = '4';
 process.env.AUTH_RATE_LIMIT_MAX = '100000';
-process.env.UPLOAD_DIR = path.join(os.tmpdir(), 'elearning-test-uploads');
+process.env.ORG_SIGNUP_PER_HOUR = '100000';
+process.env.UPLOAD_DIR = path.join(os.tmpdir(), 'yapha-lms-test-uploads');
 
 const { default: request } = await import('supertest');
 const bcrypt = (await import('bcryptjs')).default;

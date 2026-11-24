@@ -1,0 +1,79 @@
+name: Deploy
+
+# Runs only after the CI workflow has SUCCEEDED on a push to main (or when started by hand). Keyless: GitHub proves its identity to
+# Google (Workload Identity Federation). Needs the "production" environment (add required reviewers there for a manual approval
+# step) and these repository variables:
+#   GCP_PROJECT, GCP_REGION, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_DEPLOYER_SA  (values come from `terraform output`)
+# Optional repository variable: VITE_BETTERSTACK_ERRORS_DSN (public browser error-tracking DSN, baked into the frontend build).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency: { group: deploy, cancel-in-progress: false }
+
+jobs:
+  deploy:
+    # workflow_run also fires for pull requests and failed runs: only deploy a green push to main.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      REGISTRY: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT }}/yapha
+      # The commit CI tested (a workflow_run job would otherwise build whatever main is now).
+      SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      REGION: ${{ vars.GCP_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+      - name: Build the image
+        run: |
+          docker build \
+            --build-arg "VITE_RELEASE=${SHA}" \
+            --build-arg "VITE_BETTERSTACK_ERRORS_DSN=${{ vars.VITE_BETTERSTACK_ERRORS_DSN }}" \
+            -t "$REGISTRY/app:${SHA}" .
+      - name: Scan the image for known vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/app:${{ env.SHA }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Push the image
+        run: docker push "$REGISTRY/app:${SHA}"
+      - name: Migrate the database (a job; the old version keeps serving meanwhile)
+        run: |
+          gcloud run jobs update yapha-migrate --region "$REGION" --image "$REGISTRY/app:${SHA}"
+          gcloud run jobs execute yapha-migrate --region "$REGION" --wait
+      - name: Update the backup job image
+        run: gcloud run jobs update yapha-backup --region "$REGION" --image "$REGISTRY/app:${SHA}"
+      - name: Remember the revision that is serving now (for rollback)
+        id: previous
+        run: echo "revision=$(gcloud run services describe yapha --region "$REGION" --format='value(status.latestReadyRevisionName)')" >> "$GITHUB_OUTPUT"
+      - name: Deploy the new revision
+        run: gcloud run deploy yapha --region "$REGION" --image "$REGISTRY/app:${SHA}"
+      - name: Check it is healthy
+        run: |
+          url=$(gcloud run services describe yapha --region "$REGION" --format='value(status.url)')
+          curl -fsS --retry 10 --retry-delay 5 --retry-all-errors "$url/api/health"
+      - name: Roll back to the previous revision if the check failed
+        if: failure() && steps.previous.outputs.revision != ''
+        run: |
+          gcloud run services update-traffic yapha --region "$REGION" --to-revisions "${{ steps.previous.outputs.revision }}=100"
+          echo "::error::The new revision was unhealthy. Traffic is back on ${{ steps.previous.outputs.revision }}. The database migration was NOT undone: migrations must stay compatible with the previous version."

@@ -24,7 +24,7 @@ async function asApp(slug, sql, params = []) {
   const c = await pool.connect();
   try {
     await c.query('BEGIN');
-    await c.query('SET LOCAL ROLE elearning_app');
+    await c.query('SET LOCAL ROLE yapha_app');
     await c.query(`SELECT set_config('app.tenant_id', $1, true)`, [slug ? await tenantId(slug) : '']);
     return await c.query(sql, params);
   } finally {
@@ -113,7 +113,7 @@ describe('Isolation between organisations', () => {
     assert.equal(v.body.certificate.issuerName, 'alpha org');
     await agent().get(`${api('certificates', B)}/${code}`).expect(404);
 
-    const up = await rootA.post(api('upload', A)).field('purpose', 'logo').attach('file', Buffer.from([0x89, 0x50, 0x4e, 0x47]), { filename: 'logo.png', contentType: 'image/png' }).expect(200);
+    const up = await rootA.post(api('upload', A) + '?purpose=logo').attach('file', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), { filename: 'logo.png', contentType: 'image/png' }).expect(200);
     assert.ok(up.body.file.url.startsWith(`/api/${A}/files/`));
     await agent().get(`${api('files', B)}/${up.body.file.id}`).expect(404);
   });

@@ -5,6 +5,10 @@ import bcrypt from 'bcryptjs';
 import { config } from '../config.js';
 import { pool, tx } from '../db.js';
 
+// Row-level security is forced on every table, so a database user that is not a superuser sees nothing here unless the
+// platform bypass flag is set. It is set for this script's own database sessions only (db.js applies it inside each transaction, so it also works through a connection pooler such as Neon's).
+process.env.YAPHA_DB_BYPASS = 'on';
+
 if (process.env.NODE_ENV === 'production') {
   console.error('seed:demo creates accounts with a public password and must not be run in production.');
   process.exit(1);

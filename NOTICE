@@ -1,0 +1,11 @@
+Yapha LMS
+Copyright (c) 2026 Mwanga Limited, Nigeria. All rights reserved.
+Website: https://learn.yapha.com    Contact: tech@mwanga.ng
+
+"Yapha" is a subsidiary of Mwanga Limited and is also a tenant of this platform.
+Names, logos and brand assets of tenant organisations belong to those organisations.
+
+This product includes third-party open-source software (for example Express,
+PostgreSQL drivers, React, Vite and their dependencies), each distributed under
+its own licence. Run `npm ls --all` in backend/ and frontend/ for the full list;
+licence texts are in each package under node_modules/<package>/.

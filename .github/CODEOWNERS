@@ -1,0 +1,8 @@
+# Changes here need a review from these owners (enforced by the branch ruleset in deploy/github/ruleset.json).
+# Owners: Mwanga Limited engineering (tech@mwanga.ng). Create the @Mwanga-Limited/maintainers team on GitHub.
+/backend/migrations/   @Mwanga-Limited/maintainers
+/backend/src/db.js     @Mwanga-Limited/maintainers
+/backend/src/lib/security.js @Mwanga-Limited/maintainers
+/deploy/               @Mwanga-Limited/maintainers
+/.github/              @Mwanga-Limited/maintainers
+/Dockerfile            @Mwanga-Limited/maintainers

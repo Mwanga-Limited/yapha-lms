@@ -12,7 +12,7 @@ async function asApp(slug, sql) {
   const c = await pool.connect();
   try {
     await c.query('BEGIN');
-    await c.query('SET LOCAL ROLE elearning_app');
+    await c.query('SET LOCAL ROLE yapha_app');
     await c.query(`SELECT set_config('app.tenant_id', $1, true)`, [await tenantId(slug)]);
     return await c.query(sql);
   } finally { await c.query('ROLLBACK').catch(() => {}); c.release(); }

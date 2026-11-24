@@ -63,7 +63,7 @@ async function setStatus(db, ctx, course, status, action, extra = '') {
 async function checkContentFiles(db, teacherId, content) {
   const ids = [...new Set(lessonsOf(content).map((l) => l.fileId).filter(Boolean))];
   if (!ids.length) return;
-  const { rows } = await db.query(`SELECT id, original_name, purpose FROM files WHERE id = ANY($1) AND owner_id = $2`, [ids, teacherId]);
+  const { rows } = await db.query(`SELECT id, original_name, purpose FROM files WHERE id = ANY($1) AND owner_id = $2 AND status = 'ready'`, [ids, teacherId]);
   const byId = new Map(rows.map((r) => [r.id, r]));
   for (const s of content.sections) for (const it of s.items) {
     if (it.kind !== 'lesson' || !it.fileId) continue;
@@ -229,7 +229,7 @@ export const courseRoutes = actionEndpoint({
       if (c.status === 'in_review') fail(409, 'This course is being reviewed. You can edit it again after the decision.');
       const d = ctx.data;
       if (d.thumbnailFileId) {
-        const f = await db.query(`SELECT 1 FROM files WHERE id = $1 AND owner_id = $2 AND purpose = 'thumbnail'`, [d.thumbnailFileId, ctx.user.id]);
+        const f = await db.query(`SELECT 1 FROM files WHERE id = $1 AND owner_id = $2 AND purpose = 'thumbnail' AND status = 'ready'`, [d.thumbnailFileId, ctx.user.id]);
         if (!f.rowCount) fail(400, 'Upload the thumbnail first');
       }
       const values = [d.title, d.summary, d.description, d.outline, d.category, d.level, d.language,
