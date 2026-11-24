@@ -9,6 +9,7 @@ const password = 'E2e-Passw0rd!';
 
 test('a learner registers, verifies their email and signs in', async ({ page }) => {
   await page.goto(`/${ORG}/register`);
+  await page.getByRole('button', { name: 'Sign up with email' }).click();   // the form opens from this button
   await page.getByLabel(/full name|^name/i).fill('E2E Learner');
   await page.getByLabel(/^email/i).fill(email);
   await page.getByLabel(/^password/i).first().fill(password);
