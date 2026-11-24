@@ -40,7 +40,7 @@
   "dependencies": {
     "@google-cloud/storage": "^8.4.0",
     "@logtail/node": "^0.6.1",
-    "@sentry/node": "^11.11.0",
+    "@sentry/node": "^11.16.0",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "dotenv": "^18.0.9",
