@@ -15,7 +15,7 @@ test('a learner registers, verifies their email and signs in', async ({ page }) 
   await page.getByLabel(/^password/i).first().fill(password);
   const confirm = page.getByLabel(/confirm|repeat/i);
   if (await confirm.count()) await confirm.fill(password);
-  await page.getByRole('button', { name: /create|register|sign up/i }).click();
+  await page.getByRole('button', { name: 'Create account' }).click();
 
   const mail = await lastMail(email, /verify-email\?token=/);
   const link = mail.match(/https?:\/\/\S+verify-email\?token=[\w-]+/)![0];
