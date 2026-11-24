@@ -2,7 +2,7 @@
 #   docker build -t yapha-lms .
 # Run `node src/scripts/migrate.js` as a separate release step (see docker-compose.yml and deploy/RUNBOOK.md).
 
-FROM node:24-alpine AS frontend
+FROM node:26-alpine AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -14,12 +14,12 @@ RUN npm run build
 # Source maps are for error tracking only: upload them to Better Stack first (see README), never serve them
 RUN find dist -name "*.map" -delete
 
-FROM node:24-alpine AS backend-deps
+FROM node:26-alpine AS backend-deps
 WORKDIR /app/backend
 COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev
 
-FROM node:24-alpine
+FROM node:26-alpine
 # postgresql-client: pg_dump / psql for the backup and restore jobs (the same image runs the app, migrations and backups).
 # The client must be the same major version as the server (Neon runs 18): pg_dump refuses to dump a newer server.
 RUN apk add --no-cache postgresql18-client
