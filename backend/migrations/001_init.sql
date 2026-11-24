@@ -1,4 +1,4 @@
--- E-Learning Platform — initial schema (PostgreSQL 13+)
+-- Yapha LMS — initial schema (PostgreSQL 13+)
 
 CREATE TYPE user_role      AS ENUM ('student', 'teacher', 'admin');
 CREATE TYPE course_status  AS ENUM ('draft', 'in_review', 'rejected', 'approved', 'published', 'unpublished', 'archived');

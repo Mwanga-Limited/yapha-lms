@@ -1,4 +1,15 @@
-# E-Learning Platform: multitenant
+# Yapha LMS: multitenant e-learning platform
+
+| | |
+|---|---|
+| **Product** | Yapha LMS (version 0.9.1) |
+| **Owner / maintainer** | Mwanga Limited, registered in Nigeria |
+| **Production** | https://learn.yapha.com |
+| **Contact** | tech@mwanga.ng (support and security reports, see [SECURITY.md](SECURITY.md)) |
+| **Licence** | Proprietary, all rights reserved ([LICENSE](LICENSE), [NOTICE](NOTICE)) |
+| **Also see** | [CHANGELOG](CHANGELOG.md) · [CONTRIBUTING](CONTRIBUTING.md) · [API](API.md) · [TESTING](TESTING.md) · [Runbook](deploy/RUNBOOK.md) |
+
+Yapha, a Mwanga Limited subsidiary, is the first organisation (tenant) on the platform.
 
 One platform, many organisations (tenants). Each organisation (a school, company or academy) gets its own isolated e-learning site with its own Admins, Teachers, Students, courses, certificates, audit log and configuration. A **platform super admin** sees across all of them; organisations never see each other.
 
@@ -18,8 +29,8 @@ Words the app uses for its own pages (`platform`, `register`, `api`, `admin`, `l
 ## What multitenancy adds
 
 - **Unique IDs.** Every organisation has a UUID and a web address (`slug`), which is permanent. Every member has a UUID plus a human-friendly **member ID** that is unique in their organisation, e.g. `ACME-000042`. It's shown on the profile, in Admin › Users and on certificates, and can never change.
-- **Separate accounts per organisation.** The same email can join two organisations as two unrelated accounts with separate passwords. Each organisation has its own session cookie (`el_<slug>`), and a session from one organisation is rejected by every other.
-- **Isolation enforced by PostgreSQL**, not just application code. Every table carries `tenant_id` and has a row-level security policy. Each API request runs in one transaction as the restricted role `elearning_app`, with `app.tenant_id` set to the organisation in the URL, so a query can only ever see or write that organisation's rows. This holds even if application code forgets a `WHERE` clause, and even when the app connects as the `postgres` superuser. See `migrations/003_tenant_isolation.sql`.
+- **Separate accounts per organisation.** The same email can join two organisations as two unrelated accounts with separate passwords. Each organisation has its own session cookie (`yapha_<slug>`), and a session from one organisation is rejected by every other.
+- **Isolation enforced by PostgreSQL**, not just application code. Every table carries `tenant_id` and has a row-level security policy. Each API request runs in one transaction as the restricted role `yapha_app`, with `app.tenant_id` set to the organisation in the URL, so a query can only ever see or write that organisation's rows. This holds even if application code forgets a `WHERE` clause, and even when the app connects as the `postgres` superuser. See `migrations/003_tenant_isolation.sql`.
 - **Per-organisation configuration** (Admin › Settings, or the platform console):
   - **Branding:** display name, logo, accent colour, main colour (header, headings, buttons) and a dark or light header. Used on every page, in emails (sender name) and on certificates.
   - **Quiz rules:** pass mark, attempts before lock, lock hours. Defaults: 70%, 3 and 24h.
@@ -29,19 +40,20 @@ Words the app uses for its own pages (`platform`, `register`, `api`, `admin`, `l
 - **Platform super admin.** Created once by a seed script. Always signs in with two steps. Does **not** create organisations; oversees them: suspends and reactivates them, edits their settings, adds Admins (e.g. when an organisation's Admins have left), and sees people and audit logs across all organisations. Inside an organisation the super admin acts as an Admin, audited as `superadmin` and still bound by AD-04.
 - **Invitations.** Admins invite Students or Teachers. The invitee gets a 7-day link to set their password, which also verifies their email. Invite-only organisations rely on this.
 
-## Quick start
+## Run it locally
 
-Requirements: Node 20+, PostgreSQL 13+.
+Requirements: Node 20+ (the image uses 24), PostgreSQL 13+ (production uses 18). Nothing else: locally, files go to a folder, emails are printed in the terminal and no Google account is needed.
 
 ```bash
 # 1. Database
-createdb elearning
+createdb yapha_lms
+createdb yapha_lms_test         # only needed to run the tests; it is erased on every run
 
 # 2. Backend
 cd backend
 npm install
-cp .env.example .env            # set DATABASE_URL, JWT_SECRET, SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD
-npm run migrate                 # tables, row-level security, the elearning_app role
+cp .env.example .env            # then edit: DATABASE_URL, SUPERADMIN_PASSWORD (12+ characters). Every setting is explained in the file.
+npm run migrate                 # tables, row-level security, the yapha_app role
 npm run seed:superadmin         # the platform super admin, once
 npm run seed:demo               # optional: two demo organisations, "acme" and "globex"
 npm run brand:yapha             # optional: Yapha's logo, orange accent, navy main colour and light header
@@ -50,7 +62,7 @@ npm run dev                     # API on http://localhost:4000
 # 3. Frontend (second terminal)
 cd frontend
 npm install
-npm run dev                     # http://localhost:5173
+npm run dev                     # http://localhost:5173 (proxies /api to the backend)
 ```
 
 Then:
@@ -60,7 +72,32 @@ Then:
   - `admin@acme.example.com` / `admin@globex.example.com`
   - `teacher@example.com`, `student@example.com` (separate accounts in each organisation)
 
-With `MAIL_TRANSPORT=console` (the default without SMTP), every email is printed in the backend terminal: sign-in codes, invitations, verification and reset links.
+With `MAIL_TRANSPORT=console` (the default without SMTP), every email is printed in the backend terminal: sign-in codes, invitations, verification and reset links. Emails are written to a queue table first; with the console transport they go out immediately. If you try real SMTP locally (`MAIL_TRANSPORT=smtp`), also run `npm run outbox:worker` in another terminal, which retries failed emails.
+
+### What to change in `.env`
+
+| Setting | Locally | Production |
+|---|---|---|
+| `DATABASE_URL` | your local Postgres | your Neon (or other PostgreSQL) connection string; on Google Cloud use the pooled URL and also set `DATABASE_URL_UNPOOLED` |
+| `JWT_SECRET` | any string | **required**, 32+ random characters (`openssl rand -base64 48`) |
+| `TOTP_ENCRYPTION_KEY` | leave empty (derived for development) | **required**, `openssl rand -base64 32`; back it up |
+| `MAIL_TRANSPORT` | `console` | **must be `smtp`**, plus `SMTP_*` and `MAIL_FROM` with SPF/DKIM/DMARC |
+| `STORAGE_DRIVER` | `disk` | `gcs` on Google Cloud (with `GCS_BUCKET`) |
+| `APP_URL` | `http://localhost:5173` | your public `https://` address |
+| `TRUST_PROXY` | unset | `1` (direct Cloud Run), `2` behind a load balancer |
+| `RATE_LIMIT_STORE` | `memory` | `postgres` (the default in production) |
+
+The app refuses to start in production with a weak secret, without the TOTP key, with the console mail transport, or with `STORAGE_DRIVER=gcs` and no bucket.
+
+### Frontend commands
+
+```bash
+cd frontend
+npm test            # unit and component tests (Vitest, Testing Library, MSW)
+npm run lint        # oxlint
+npm run build       # type-check + production build into frontend/dist
+npm run e2e         # Playwright end-to-end (needs the backend running and E2E_DATABASE_URL; see TESTING.md)
+```
 
 ### Upgrading an existing (single-organisation) database
 
@@ -78,9 +115,9 @@ Then run `npm run seed:superadmin`. You can change Yapha's name and settings in 
 The full test plan (automated tests, the Postman collection in `postman/`, and a frontend walkthrough) is in **TESTING.md**.
 
 ```bash
-createdb elearning_test
-cd backend && npm test          # 50 tests; TEST_DATABASE_URL in .env (a separate database, erased on each run)
-cd frontend && npm test         # 21 tests (Vitest + React Testing Library), no database needed
+createdb yapha_lms_test
+cd backend && npm test          # backend tests; TEST_DATABASE_URL in .env (a separate database, erased on each run)
+cd frontend && npm test         # Vitest + React Testing Library, no database needed
 ```
 
 `test/tenancy.test.js` attacks the isolation directly:
@@ -95,18 +132,19 @@ Each organisation has the same 8 endpoints under **`/api/<organisation>/`**, plu
 
 | Endpoint | Who | Actions |
 |---|---|---|
-| `POST /api/:org/auth` | public | `me` (includes the organisation's public settings), `register`, `login`, `verifyMfa`, `sendMfaEmail`, `google`, `logout`, `verifyEmail`, `resendVerification`, `requestPasswordReset`, `resetPassword` (also accepts invitation links) |
-| `POST /api/:org/account` | signed in | `updateProfile`, `changePassword`, `totpSetup`, `totpEnable`, `totpDisable`, `notifications`, `markNotificationsRead`, `applyTeacher`, `myApplications`, `dashboard` |
+| `POST /api/:org/auth` | public | `me` (includes the organisation's public settings), `register`, `login`, `verifyMfa`, `sendMfaEmail`, `google`, `logout`, `verifyEmail`, `resendVerification`, `requestPasswordReset`, `resetPassword` (also accepts invitation links), `stopEmails` |
+| `POST /api/:org/account` | signed in | `updateProfile`, `changePassword`, `totpSetup`, `totpEnable` (returns recovery codes), `totpDisable`, `regenerateRecoveryCodes`, `twoFactorStatus`, `notifications`, `markNotificationsRead`, `applyTeacher`, `myApplications`, `dashboard` |
 | `POST /api/:org/courses` | public / Teacher / Admin | `catalog`, `detail`, `preview`, `mine`, `create`, `get`, `updateMeta`, `saveContent`, `startRevision`, `discardRevision`, `submit`, `publish`, `unpublish`, `archive`, `remove`, `learners`, `resetAttempts` |
 | `POST /api/:org/learn` | Students | `enrol`, `player`, `lesson`, `savePosition`, `completeLesson`, `quiz`, `submitQuiz` |
-| `POST /api/:org/admin` | Admin | `stats`, `reviewQueue`, `approveCourse`, `rejectCourse`, `courses`, `applications`, `decideApplication`, `users`, `changeRole`, `setActive`, `certificates`, `revokeCertificate`, `audit`, `auditCsv`, **`settings`**, **`updateSettings`**, **`inviteUser`** |
-| `POST /api/:org/upload` | signed in | multipart `purpose` (`photo`, `thumbnail`, `lesson_file`, `lesson_video`, `logo`) + `file` |
+| `POST /api/:org/admin` | Admin | `stats`, `reviewQueue`, `approveCourse`, `rejectCourse`, `courses`, `applications`, `decideApplication`, `users`, `changeRole`, `setActive`, `certificates`, `revokeCertificate`, `audit`, `auditCsv`, **`settings`**, **`updateSettings`**, **`inviteUser`**, **`resendInvite`**, **`resetTwoFactor`** |
+| `POST /api/:org/upload/init`, `/upload/complete` | signed in | two-step upload: `init` says how (straight to the bucket with a signed address, or form), `complete` confirms it |
+| `POST /api/:org/upload` | signed in | multipart `purpose` (`photo`, `thumbnail`, `lesson_file`, `lesson_video`, `logo`) + `file` (disk storage only) |
 | `GET /api/:org/files/:id` | public / signed URL | the organisation's files only |
 | `GET /api/:org/certificates/:code` | public | verification JSON (with member ID and issuer); `?format=pdf` returns the branded PDF |
 | `POST /api/organisations` | public | `info` (is registration open), `checkAddress` (is a web address free), `register` (new organisation + its first Admin) |
 | `POST /api/platform` | super admin | `me`, `login`, `verifyMfa`, `sendMfaEmail`, `logout`, `changePassword`, `totpSetup`, `totpEnable`, `stats`, `tenants`, `tenant`, `updateTenant`, `addTenantAdmin`, `users`, `audit`, `auditCsv` |
 
-Plus `GET /api/health`, which also checks that the database answers.
+Plus `GET /api/health` (database, migrations, storage) and `POST /api/internal/outbox/drain`, `/api/internal/cleanup` (Cloud Scheduler only, Google identity token).
 
 ## How the rules are enforced
 
@@ -132,12 +170,54 @@ All Phase 1 rules apply **within each organisation**:
 
 ## Security notes
 
-- Passwords hashed with bcrypt (cost 12). Sessions are a JWT in an `httpOnly`, `SameSite=strict` cookie per organisation (`el_<slug>`), plus `el_platform` for the super admin. Each token names its organisation and is rejected elsewhere. Sessions are revoked on password change or reset, role change and deactivation.
-- Every API request is one transaction as role `elearning_app` (`NOBYPASSRLS`, no `DELETE` on users/tenants, no `UPDATE`/`DELETE` on the audit log), with the organisation set by the server from the URL, never by the client.
+- Passwords hashed with bcrypt (cost 12). Sessions are a JWT in an `httpOnly`, `SameSite=strict` cookie per organisation (`yapha_<slug>`), plus `yapha_platform` for the super admin. Each token names its organisation and is rejected elsewhere. Sessions are revoked on password change or reset, role change and deactivation.
+- Every API request is one transaction as role `yapha_app` (`NOBYPASSRLS`, no `DELETE` on users/tenants, no `UPDATE`/`DELETE` on the audit log), with the organisation set by the server from the URL, never by the client.
 - The response is sent only after the transaction commits. Failed sign-ins and blocked attempts are kept in the audit log even when the request is refused.
 - Login rate limiting per IP and per account; single-use, hashed, expiring links (verification 24h, reset 60 min, invitation 7 days).
 - Helmet with a strict Content Security Policy; JSON-only POSTs; zod validation; quiz answers never sent to learners.
-- **Production:** set `NODE_ENV=production`, a long random `JWT_SECRET`, `COOKIE_SECURE=true` behind HTTPS, and real SMTP. Ideally, connect as a database owner that is **not** a superuser; `npm run migrate` grants it membership of `elearning_app`.
+- **Authenticator app (2FA):** secrets are encrypted in the database (AES-256-GCM, `TOTP_ENCRYPTION_KEY`); each code works once; 10 single-use recovery codes are shown once at setup; with an app turned on, emailed codes are no longer accepted; turning it off needs the password and a code; admins can reset someone's 2FA (audited, the person is notified).
+- **Email:** queued in the database in the same transaction as the action (nothing is sent if the action fails), retried on failure, sign-in codes expire after 10 minutes. One address can be invited at most 3 times a day and 10 times in 30 days across all organisations; every invitation has a "stop these emails" link that blocks that address everywhere.
+- **Uploads:** size and type are checked before any bytes are accepted, the file's first bytes must match its claimed type, and each organisation has a storage cap. On Google Cloud the browser uploads straight to the bucket (the app never carries large files) and private files are served through short-lived signed addresses.
+
+## Deploying
+
+There are two supported ways to run this in production. Both refuse to start with weak or missing settings (see the table above).
+
+### A. Google Cloud (recommended): `deploy/gcp/`
+
+Cloud Run (the app) + Neon PostgreSQL (external; you pass its connection strings in) + Cloud Storage (uploads and an independent backup bucket in a second region) + Secret Manager + Cloud Scheduler (email retries every minute, hourly clean-up, nightly backup) + Cloud Monitoring (uptime check and alerts) + GitHub Actions for keyless deploys. Everything is defined in `deploy/gcp/terraform`.
+
+**The full step-by-step guide, from an empty Google Cloud account to production, is `deploy/gcp/DEPLOY-GUIDE.md`.** In short (reference material is in `deploy/gcp/RUNBOOK.md`):
+
+1. **Prerequisites:** a Google Cloud project with billing; `gcloud`, `terraform` (1.7+) and Docker on your machine; a domain; an SMTP provider with SPF, DKIM and DMARC set up for your sending domain; a GitHub repository.
+2. **State bucket:** create a Cloud Storage bucket by hand for Terraform state (versioning on).
+3. **Configure:** `cd deploy/gcp/terraform`, `cp terraform.tfvars.example terraform.tfvars`, fill it in (`project_id`, `region`, `app_url`, `domain`, `alert_email`, `github_repo`, `smtp_host`, `mail_from`), and export `TF_VAR_database_url`, `TF_VAR_database_url_unpooled` (Neon pooled and direct URLs) and `TF_VAR_smtp_password` (never commit them). Secrets that Terraform generates itself (`JWT_SECRET`, `TOTP_ENCRYPTION_KEY`, `METRICS_TOKEN`) go straight into Secret Manager.
+4. **First image:** build and push it to the Artifact Registry repository, then put its tag in `image`.
+5. **Create everything:** `terraform init -backend-config="bucket=<state bucket>"`, `terraform plan` (read it), `terraform apply`.
+6. **Migrate and create the super admin:** `gcloud run jobs execute yapha-migrate --region REGION --wait`, then create the platform super admin once (RUNBOOK section 2).
+7. **DNS:** add the records from `terraform output dns_records`.
+8. **GitHub:** set the repository variables from `terraform output` (`GCP_PROJECT`, `GCP_REGION`, `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_DEPLOYER_SA`), create the `production` environment with required reviewers, and run `deploy/github/apply-ruleset.sh owner/repo` for branch protection. From then on, merging to `main` deploys.
+9. **Moving from an existing server:** copy uploaded files with `npm run files:to-gcs`, restore the database, then run the migrate job (it also encrypts existing authenticator secrets).
+10. **Before launch:** run a restore drill (`deploy/gcp/restore-drill.sh`) and send a test invitation to Gmail and Outlook.
+
+**Not yet run against a real Google Cloud project:** do the first deployment in a throwaway project.
+
+### B. One server with Docker: `deploy/RUNBOOK.md`
+
+Build the `Dockerfile`, copy `deploy/.env.production.example` to `deploy/.env.production`, fill it in (including `TOTP_ENCRYPTION_KEY`), then `docker compose --env-file deploy/.env.production up -d --build`. That starts PostgreSQL, a one-off migration step, the app and the email retry worker; put a TLS reverse proxy in front and set `TRUST_PROXY`. Connect as a database user that is **not** a superuser but owns its database and has `CREATEROLE` (the compose bootstrap does this); `npm run migrate` takes a lock, grants the runtime role and checks it works. Back up with `deploy/backup.sh` and practise `deploy/restore.sh`. Uploads live on a Docker volume here, so run **one** app instance.
+
+`GET /api/health` reports database, migrations and storage; `GET /api/metrics` is available with `METRICS_TOKEN`.
+
+### Useful scripts (`cd backend`)
+
+| Command | What it does |
+|---|---|
+| `npm run migrate` | Apply database migrations (locked, safe to repeat) |
+| `npm run secrets:encrypt-totp` | Encrypt authenticator secrets stored in clear; re-encrypt after a key rotation |
+| `npm run outbox:worker` | Send queued emails and retry failed ones every minute (not needed on Google Cloud) |
+| `npm run backup` | Cloud backup: database dump + file copy to `BACKUP_BUCKET` (the nightly job runs this) |
+| `npm run files:to-gcs` | Copy existing disk uploads into the bucket (safe to repeat) |
+| `npm run reset:superadmin-2fa` | Break-glass: remove the super admin's authenticator app (`SUPERADMIN_EMAIL=...`) |
 
 ## Course payments (Paystack)
 
@@ -177,20 +257,26 @@ Set `GOOGLE_CLIENT_ID` in `backend/.env`. Each organisation can turn the button 
 backend/
   migrations/001_init.sql             schema, constraints, protective triggers
   migrations/002_multitenancy.sql     tenants table, super admin role
-  migrations/003_tenant_isolation.sql tenant_id everywhere, member IDs, row-level security, elearning_app role
+  migrations/003_tenant_isolation.sql tenant_id everywhere, member IDs, row-level security, yapha_app role
   migrations/004_yapha.sql            the original organisation becomes Yapha at /yapha
   migrations/005_video_watch.sql      watched time per video lesson (videos complete only by watching)
+  migrations/011_cloud.sql            email outbox, recovery codes, invitation limits, rate-limit counters, two-phase uploads
   src/app.js                          security headers, /api/:org and /api/platform, errors
   src/db.js                           per-request tenant scope (transaction + role + app.tenant_id)
   src/routes/index.js                 organisation resolution and request scoping
   src/routes/                         auth, account, courses, learn, admin, files, certificates, organisations (registration), platform
   src/lib/tenant.js                   organisation settings (schema, defaults), join rules
-  src/scripts/                        migrate, seed-superadmin, seed-demo
-  test/                               rules, files/2FA, tenancy (isolation) tests
+  src/lib/                            mailer + outbox (queue/retry), totp (encryption, recovery codes), storage (disk | gcs), mailguard
+  src/scripts/                        migrate, seeds, backup, outbox-worker, encrypt-totp-secrets, files-to-gcs, 2FA reset
+  test/                               rules, files/2FA, tenancy (isolation), hardening, cloud tests
 frontend/
   src/main.tsx                        picks the app by address: /<org>, /platform or /
   src/App.tsx, src/pages/             an organisation's site (router basename /<org>)
   src/platform/                       super admin console
   src/components/SettingsForm.tsx     organisation settings editor (Admin and super admin)
-postman/                              collection + environment (127 requests, 209 checks)
+frontend/e2e/                         Playwright end-to-end tests
+deploy/gcp/                           Terraform, runbook and restore drill for Google Cloud
+deploy/                               single-server runbook, backup/restore scripts, compose bootstrap
+.github/                              CI, deploy, CodeQL, Dependabot, CODEOWNERS
+postman/                              collection + environment (122 requests, 199 checks)
 ```

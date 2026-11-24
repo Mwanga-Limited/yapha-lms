@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api, type Role, type User } from '../../api';
 import { useAuth } from '../../auth';
-import { Button, Empty, Field, Loading, Modal, Pager, ReasonModal, Select, fmtDate, useAction, useDocumentTitle, useLoad, useToast } from '../../ui';
+import { Alert, Button, Empty, Field, Loading, Modal, Pager, ReasonModal, Select, fmtDate, useAction, useDocumentTitle, useLoad, useToast } from '../../ui';
 import { AdminNav } from './Dashboard';
 
 type Row = User & { isActive: boolean; deactivatedAt: string | null; deactivatedReason: string | null };
@@ -13,6 +13,7 @@ export function AdminUsers() {
   const [f, setF] = useState({ q: '', role: '', status: '', page: 1 });
   const { data, loading, reload } = useLoad(() => api<{ users: Row[]; total: number; pageSize: number }>('admin', 'users', f), [f]);
   const [deactivate, setDeactivate] = useState<Row | null>(null);
+  const [reset2fa, setReset2fa] = useState<Row | null>(null);
   const [inviting, setInviting] = useState(false);
   const [invite, setInvite] = useState({ name: '', email: '', role: 'student' });
   const { busy, run } = useAction();
@@ -64,6 +65,10 @@ export function AdminUsers() {
                   <td>{u.isActive ? 'Active' : <span title={u.deactivatedReason ?? ''}>Deactivated {fmtDate(u.deactivatedAt)}</span>}</td>
                   <td>{fmtDate(u.createdAt)}</td>
                   <td className="cell-actions">
+                    {u.isActive && !u.hasPassword && !u.googleLinked && !u.emailVerified && u.role !== 'admin' && (
+                      <button className="link-btn" disabled={busy} onClick={() => run(async () => { await api('admin', 'resendInvite', { userId: u.id }); }, `Invitation sent again to ${u.email}`)}>Resend invitation</button>
+                    )}
+                    {u.totpEnabled && u.id !== me?.id && (u.role !== 'admin' || !!me?.isSuper) && <button className="link-btn" onClick={() => setReset2fa(u)}>Reset 2FA</button>}
                     {u.isActive
                       ? (u.role !== 'admin' && <button className="link-btn danger-text" onClick={() => setDeactivate(u)}>Deactivate</button>)
                       : <button className="link-btn" disabled={busy} onClick={() => run(async () => { await api('admin', 'setActive', { userId: u.id, active: true }); await reload(); }, 'Account reactivated')}>Reactivate</button>}
@@ -74,13 +79,22 @@ export function AdminUsers() {
           </table>
         </div>
       )}
+      <ReasonModal open={!!reset2fa} title={`Reset two-step sign-in for ${reset2fa?.name ?? ''}`} label="Why? (kept in the audit log)" confirmLabel="Remove authenticator app" minLength={3}
+        onClose={() => setReset2fa(null)}
+        onConfirm={async (reason) => { await api('admin', 'resetTwoFactor', { userId: reset2fa!.id, reason }); setReset2fa(null); toast('Two-step sign-in reset. They will sign in with emailed codes.'); await reload(); }} />
       {data && <Pager page={f.page} total={data.total} pageSize={data.pageSize} onPage={(p) => setF({ ...f, page: p })} />}
       <Modal title="Invite someone" open={inviting} onClose={() => setInviting(false)}>
         <form onSubmit={(e) => {
           e.preventDefault();
           void run(async () => { await api('admin', 'inviteUser', invite); setInviting(false); await reload(); }, `Invitation sent to ${invite.email}`);
         }}>
-          <p className="muted">They get an email with a link to set their password. Their member ID is created now.</p>
+          {me && !me.emailVerified && !me.isSuper && (
+            <Alert tone="warn" title="Verify your email first">
+              Invitations are sent from the platform’s address, so we need to confirm your own email before you can invite others.{' '}
+              <button type="button" className="link-btn" onClick={() => void run(async () => { await api('auth', 'resendVerification'); }, `Verification email sent to ${me.email}`)}>Send me the verification email</button>
+            </Alert>
+          )}
+          <p className="muted">They get an email with a link to set their password. Their member ID is created now. An organisation can send a limited number of invitations per day (fewer in its first 24 hours).</p>
           <Field label="Full name" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} required />
           <Field label="Email" type="email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} required />
           <Select label="Role" value={invite.role} onChange={(e) => setInvite({ ...invite, role: e.target.value })}>
@@ -88,7 +102,7 @@ export function AdminUsers() {
           </Select>
           <div className="row-end">
             <Button type="button" variant="ghost" onClick={() => setInviting(false)}>Cancel</Button>
-            <Button type="submit" busy={busy}>Send invitation</Button>
+            <Button type="submit" busy={busy} disabled={!!me && !me.emailVerified && !me.isSuper}>Send invitation</Button>
           </div>
         </form>
       </Modal>

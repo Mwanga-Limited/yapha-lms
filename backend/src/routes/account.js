@@ -1,10 +1,12 @@
 import bcrypt from 'bcryptjs';
 import { authenticator } from 'otplib';
+import { checkSetupCode, checkTotp, clearRecoveryCodes, issueRecoveryCodes, recoveryCodesLeft, seal, useRecoveryCode, looksLikeRecoveryCode } from '../lib/totp.js';
+import { emails } from '../lib/mailer.js';
 import QRCode from 'qrcode';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { query, tx } from '../db.js';
-import { actionEndpoint, id, password, reqStr, str } from '../lib/actions.js';
+import { actionEndpoint, httpUrl, id, password, reqStr, str } from '../lib/actions.js';
 import { audit } from '../lib/audit.js';
 import { computeProgress, findItem } from '../lib/content.js';
 import { apiBase, currentTenant, tenantName } from '../lib/tenant.js';
@@ -15,6 +17,14 @@ import { learnerState } from '../lib/learning.js';
 import { REFERRER_ROLES, byCourse, maskEmail, referralLink, referredEnrolments } from '../lib/referrals.js';
 
 const profileFields = ['name', 'phone', 'bio', 'photo_file_id'];
+
+/** Password (when set) and a current authenticator code or recovery code. */
+async function requireSecondProof(ctx, u) {
+  if (u.password_hash && !(await bcrypt.compare(ctx.data.password ?? '', u.password_hash))) fail(400, 'Your password is not correct');
+  const c = ctx.data.code;
+  const ok = /^\d{6}$/.test(c) ? await checkTotp({ query }, u, c) : looksLikeRecoveryCode(c) && await useRecoveryCode({ query }, u.id, c);
+  if (!ok) fail(400, 'That code is not correct');
+}
 
 export const accountRoutes = actionEndpoint({
   updateProfile: {
@@ -28,7 +38,7 @@ export const accountRoutes = actionEndpoint({
     run: async (ctx) => tx(async (db) => {
       const d = ctx.data;
       if (d.photoFileId) {
-        const f = await db.query(`SELECT 1 FROM files WHERE id = $1 AND owner_id = $2 AND purpose = 'photo'`, [d.photoFileId, ctx.user.id]);
+        const f = await db.query(`SELECT 1 FROM files WHERE id = $1 AND owner_id = $2 AND purpose = 'photo' AND status = 'ready'`, [d.photoFileId, ctx.user.id]);
         if (!f.rowCount) fail(400, 'Upload a profile photo first');
       }
       const before = Object.fromEntries(profileFields.map((k) => [k, ctx.user[k]]));
@@ -60,35 +70,62 @@ export const accountRoutes = actionEndpoint({
     run: async (ctx) => {
       if (ctx.user.totp_enabled) fail(400, 'Authenticator app is already enabled');
       const secret = authenticator.generateSecret();
-      await query(`UPDATE users SET totp_secret = $2 WHERE id = $1 AND NOT totp_enabled`, [ctx.user.id, secret]);
+      await query(`UPDATE users SET totp_secret = $2 WHERE id = $1 AND NOT totp_enabled`, [ctx.user.id, seal(secret)]);
       const uri = authenticator.keyuri(ctx.user.email, tenantName(currentTenant()), secret);
       return { secret, uri, qr: await QRCode.toDataURL(uri, { margin: 1, width: 220 }) };
     },
   },
 
+  /** Turns the authenticator app on and returns the recovery codes: shown once, never again. */
   totpEnable: {
     auth: 'user',
     schema: z.object({ code: z.string().trim().regex(/^\d{6}$/) }),
     run: async (ctx) => {
       const { rows: [u] } = await query(`SELECT * FROM users WHERE id = $1`, [ctx.user.id]);
-      if (!u.totp_secret || !authenticator.check(ctx.data.code, u.totp_secret)) fail(400, 'That code is not correct. Check the time on your phone and try again.');
-      const { rows } = await query(`UPDATE users SET totp_enabled = true WHERE id = $1 RETURNING *`, [u.id]);
+      if (u.totp_enabled) fail(400, 'Authenticator app is already enabled');
+      if (!checkSetupCode(u, ctx.data.code)) fail(400, 'That code is not correct. Check the time on your phone and try again.');
+      const { rows } = await query(`UPDATE users SET totp_enabled = true, totp_last_step = NULL WHERE id = $1 RETURNING *`, [u.id]);
+      const recoveryCodes = await issueRecoveryCodes({ query }, u.id);
       await audit(null, ctx, { action: 'user.2fa_enabled', targetType: 'user', targetId: u.id, newValues: { method: 'totp' } });
+      ctx.after(() => emails.securityNotice(u, 'Authenticator app turned on', ['An authenticator app was added to your account for two-step sign-in.']));
+      return { user: publicUser(rows[0]), recoveryCodes };
+    },
+  },
+
+  /** Proves it is really the account owner: password (when the account has one) and a current code or recovery code. */
+  totpDisable: {
+    auth: 'user',
+    schema: z.object({ code: z.string().trim().min(6).max(20), password: z.string().max(200).optional().default('') }),
+    run: async (ctx) => {
+      const u = ctx.user;
+      if (!u.totp_enabled) fail(400, 'Authenticator app is not enabled');
+      await requireSecondProof(ctx, u);
+      // Admins/Teachers fall back to email codes, so 2FA stays mandatory (AD-07).
+      const { rows } = await query(`UPDATE users SET totp_enabled = false, totp_secret = NULL, totp_last_step = NULL WHERE id = $1 RETURNING *`, [u.id]);
+      await clearRecoveryCodes({ query }, u.id);
+      await audit(null, ctx, { action: 'user.2fa_disabled', targetType: 'user', targetId: u.id, newValues: { fallback: 'email' } });
+      ctx.after(() => emails.securityNotice(u, 'Authenticator app turned off', ['The authenticator app was removed from your account. Sign-in codes are now sent by email.']));
       return { user: publicUser(rows[0]) };
     },
   },
 
-  totpDisable: {
+  regenerateRecoveryCodes: {
     auth: 'user',
-    schema: z.object({ code: z.string().trim().regex(/^\d{6}$/) }),
+    schema: z.object({ code: z.string().trim().min(6).max(20), password: z.string().max(200).optional().default('') }),
     run: async (ctx) => {
       const u = ctx.user;
-      if (!u.totp_enabled || !authenticator.check(ctx.data.code, u.totp_secret)) fail(400, 'That code is not correct');
-      // Admins/Teachers fall back to email codes, so 2FA stays mandatory (AD-07).
-      const { rows } = await query(`UPDATE users SET totp_enabled = false, totp_secret = NULL WHERE id = $1 RETURNING *`, [u.id]);
-      await audit(null, ctx, { action: 'user.2fa_disabled', targetType: 'user', targetId: u.id, newValues: { fallback: 'email' } });
-      return { user: publicUser(rows[0]) };
+      if (!u.totp_enabled) fail(400, 'Turn on the authenticator app first');
+      await requireSecondProof(ctx, u);
+      const recoveryCodes = await issueRecoveryCodes({ query }, u.id);
+      await audit(null, ctx, { action: 'user.recovery_codes_regenerated', targetType: 'user', targetId: u.id });
+      ctx.after(() => emails.securityNotice(u, 'New recovery codes created', ['New recovery codes were created for your account. The old ones no longer work.']));
+      return { recoveryCodes };
     },
+  },
+
+  twoFactorStatus: {
+    auth: 'user',
+    run: async (ctx) => ({ totpEnabled: ctx.user.totp_enabled, recoveryCodesLeft: ctx.user.totp_enabled ? await recoveryCodesLeft({ query }, ctx.user.id) : 0 }),
   },
 
   notifications: {
@@ -114,7 +151,7 @@ export const accountRoutes = actionEndpoint({
 
   applyTeacher: {
     auth: 'user',
-    schema: z.object({ bio: reqStr(2000, 20), expertise: reqStr(300), credentialUrl: z.string().trim().url().max(500).optional().or(z.literal('')) }),
+    schema: z.object({ bio: reqStr(2000, 20), expertise: reqStr(300), credentialUrl: httpUrl.optional().or(z.literal('')) }),
     run: async (ctx) => tx(async (db) => {
       if (ctx.user.role !== 'student') fail(400, 'You already have teaching access');
       const pending = await db.query(`SELECT 1 FROM teacher_applications WHERE user_id = $1 AND status = 'pending'`, [ctx.user.id]);

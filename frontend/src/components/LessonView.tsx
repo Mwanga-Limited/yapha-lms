@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { LessonPayload } from '../api';
+import { safeHttpUrl, type LessonPayload } from '../api';
 import { embedUrl, listenMessages, parseEmbedMessage, shouldReport } from '../watch';
 
 /**
@@ -41,7 +41,7 @@ export function LessonView({ lesson, startAt = 0, onPosition }: {
     };
   }, [lesson.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const src = lesson.type === 'video' ? lesson.fileUrl || lesson.videoUrl : null;
+  const src = lesson.type === 'video' ? lesson.fileUrl || safeHttpUrl(lesson.videoUrl) : null;
   const embed = src && !lesson.fileUrl ? embedUrl(src, startAt, window.location.origin) : null;
 
   const report = (sec: number, duration: number | undefined, force = false) => {

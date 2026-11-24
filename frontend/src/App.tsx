@@ -12,6 +12,7 @@ import { AdminUsers } from './pages/admin/Users';
 import { ForgotPassword, ResetPassword } from './pages/auth/Password';
 import { Login } from './pages/auth/Login';
 import { Register } from './pages/auth/Register';
+import { StopEmails } from './pages/auth/StopEmails';
 import { VerifyEmail } from './pages/auth/VerifyEmail';
 import { Catalog } from './pages/Catalog';
 import { CourseDetail } from './pages/CourseDetail';
@@ -56,6 +57,7 @@ export function App() {
         <Route path="login" element={<Login />} />
         <Route path="register" element={<Register />} />
         <Route path="verify-email" element={<VerifyEmail />} />
+        <Route path="stop-emails" element={<StopEmails />} />
         <Route path="forgot-password" element={<ForgotPassword />} />
         <Route path="reset-password" element={<ResetPassword />} />
         <Route path="verify" element={<VerifyCertificate />} />

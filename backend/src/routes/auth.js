@@ -1,20 +1,19 @@
 import bcrypt from 'bcryptjs';
-import { authenticator } from 'otplib';
-import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { db, query, tx } from '../db.js';
-import { actionEndpoint, email, password, reqStr } from '../lib/actions.js';
+import { actionEndpoint, email, httpUrl, password, reqStr } from '../lib/actions.js';
 import { audit } from '../lib/audit.js';
+import { recoveryCodesLeft, verifySecondFactor } from '../lib/totp.js';
+import { googleAvailable, verifyGoogleCredential } from '../lib/google.js';
 import { fail } from '../lib/errors.js';
+import { readStopToken, suppress } from '../lib/mailguard.js';
 import { emails } from '../lib/mailer.js';
-import { notifyAdmins } from '../lib/notify.js';
+import { notify, notifyAdmins } from '../lib/notify.js';
 import { PRIVILEGED, clearSession, publicUser, readMfaToken, setSession, signMfaToken } from '../lib/security.js';
 import { consumeUserToken, issueUserToken, randomCode } from '../lib/tokens.js';
 import { currentTenant, emailAllowed, publicTenant, settingsOf } from '../lib/tenant.js';
 
-authenticator.options = { window: 1 };
-const google = config.googleClientId ? new OAuth2Client(config.googleClientId) : null;
 const WINDOW = `interval '15 minutes'`;
 const DUMMY_HASH = bcrypt.hashSync('timing-equaliser', config.bcryptRounds); // keeps unknown-email logins as slow as real ones
 
@@ -53,7 +52,7 @@ async function completeLogin(ctx, user, method) {
       ctx.after(() => emails.mfaCode(user, code));
       emailHint = user.email.replace(/^(.).*(@.*)$/, '$1•••$2');
     }
-    return { mfa: { token: signMfaToken(user), method: user.totp_enabled ? 'totp' : 'email', emailHint } };
+    return { mfa: { token: signMfaToken(user), method: user.totp_enabled ? 'totp' : 'email', emailHint, recovery: !!user.totp_enabled } };
   }
   setSession(ctx.res, user);
   await audit(null, ctx, { action: 'auth.login', targetType: 'user', targetId: user.id, newValues: { method }, actor: user });
@@ -83,7 +82,7 @@ export const authRoutes = actionEndpoint({
     schema: z.object({
       name: reqStr(120), email, password,
       joinAs: z.enum(['student', 'teacher']).default('student'),
-      application: z.object({ bio: reqStr(2000, 20), expertise: reqStr(300), credentialUrl: z.string().trim().url().max(500).optional().or(z.literal('')) }).optional(),
+      application: z.object({ bio: reqStr(2000, 20), expertise: reqStr(300), credentialUrl: httpUrl.optional().or(z.literal('')) }).optional(),
     }),
     run: async (ctx) => {
       const d = ctx.data;
@@ -142,13 +141,14 @@ export const authRoutes = actionEndpoint({
     auth: 'public',
     schema: z.object({ credential: z.string().min(10) }),
     run: async (ctx) => {
-      if (!google || !settingsOf(currentTenant()).auth.google) fail(400, 'Google sign-in is not available for this organisation');
+      if (!googleAvailable() || !settingsOf(currentTenant()).auth.google) fail(400, 'Google sign-in is not available for this organisation');
       let payload;
       try {
-        payload = (await google.verifyIdToken({ idToken: ctx.data.credential, audience: config.googleClientId })).getPayload();
+        payload = await verifyGoogleCredential(ctx.data.credential);
       } catch { fail(401, 'Google sign-in failed'); }
       if (!payload?.email || !payload.email_verified) fail(401, 'Your Google email is not verified');
       const em = payload.email.toLowerCase();
+      let claimed = false;
       const user = await tx(async (db) => {
         let { rows } = await db.query(`SELECT * FROM users WHERE google_sub = $1 OR lower(email) = $2 ORDER BY (google_sub = $1) DESC LIMIT 1`, [payload.sub, em]);
         let u = rows[0];
@@ -160,8 +160,20 @@ export const authRoutes = actionEndpoint({
           ));
           u = rows[0];
           await audit(db, ctx, { action: 'auth.register', targetType: 'user', targetId: u.id, newValues: { email: em, method: 'google' }, actor: u });
-        } else if (!u.google_sub || !u.email_verified_at) {
-          ({ rows } = await db.query(`UPDATE users SET google_sub = coalesce(google_sub, $2), email_verified_at = coalesce(email_verified_at, now()) WHERE id = $1 RETURNING *`, [u.id, payload.sub]));
+        } else if (!u.email_verified_at) {
+          // Google has just proven this person owns the address, but the existing account was created without that proof:
+          // whoever registered it may be someone else. Take it over cleanly: remove the password and the authenticator
+          // app that person set, end their sessions and cancel any pending links, so only the Google owner can sign in.
+          ({ rows } = await db.query(
+            `UPDATE users SET google_sub = coalesce(google_sub, $2), email_verified_at = now(), password_hash = NULL,
+                    totp_enabled = false, totp_secret = NULL, token_version = token_version + 1 WHERE id = $1 RETURNING *`, [u.id, payload.sub]));
+          await db.query(`UPDATE user_tokens SET used_at = now() WHERE user_id = $1 AND used_at IS NULL`, [u.id]);
+          await db.query(`DELETE FROM recovery_codes WHERE user_id = $1`, [u.id]);
+          await audit(db, ctx, { action: 'auth.account_claimed', targetType: 'user', targetId: u.id, oldValues: { hadPassword: !!u.password_hash, totpEnabled: u.totp_enabled }, newValues: { method: 'google' }, actor: rows[0] });
+          claimed = u.password_hash !== null;
+          u = rows[0];
+        } else if (!u.google_sub) {
+          ({ rows } = await db.query(`UPDATE users SET google_sub = $2 WHERE id = $1 RETURNING *`, [u.id, payload.sub]));
           u = rows[0];
         }
         return u;
@@ -170,22 +182,28 @@ export const authRoutes = actionEndpoint({
         await audit(null, ctx, { action: 'auth.login_failed', targetType: 'email', targetId: em, newValues: { reason: 'deactivated', method: 'google' }, actor: user });
         fail(403, 'This account has been deactivated. Contact support.');
       }
-      return completeLogin(ctx, user, 'google');
+      const result = await completeLogin(ctx, user, 'google');
+      return claimed ? { ...result, notice: 'PASSWORD_CLEARED' } : result;
     },
   },
 
   verifyMfa: {
     auth: 'public',
-    schema: z.object({ token: z.string(), code: z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code') }),
+    // A 6-digit code (authenticator app or emailed), or a recovery code like ABCDE-FGH23.
+    schema: z.object({ token: z.string(), code: z.string().trim().min(6, 'Enter your sign-in code').max(20) }),
     run: async (ctx) => {
       const u = await loadMfaUser(ctx.data.token);
       if ((await recentCount('auth.mfa_failed', u.id)) >= config.loginMaxFailures) fail(429, 'Too many wrong codes. Try again in 15 minutes.');
-      let method = null;
-      if (u.totp_enabled && u.totp_secret && authenticator.check(ctx.data.code, u.totp_secret)) method = 'totp';
-      else if (await consumeUserToken(db, ctx.data.code, 'mfa_email', u.id)) method = 'email';
+      const method = await verifySecondFactor(db, u, ctx.data.code);
       if (!method) {
         await audit(null, ctx, { action: 'auth.mfa_failed', targetType: 'user', targetId: u.id, actor: u });
         fail(401, 'That code is not correct');
+      }
+      if (method === 'recovery') {
+        const left = await recoveryCodesLeft(db, u.id);
+        await audit(db, ctx, { action: 'auth.recovery_code_used', targetType: 'user', targetId: u.id, newValues: { left }, actor: u });
+        await notify(db, u.id, { type: 'account', title: 'A recovery code was used', body: `${left} recovery codes left.${left === 0 ? ' Create new ones in your profile.' : ''}`, link: '/profile' });
+        ctx.after(() => emails.securityNotice(u, 'A recovery code was used to sign in', [`A recovery code was used to sign in to your account. You have ${left} left.`]));
       }
       setSession(ctx.res, u);
       await audit(null, ctx, { action: 'auth.login', targetType: 'user', targetId: u.id, newValues: { method: `password+${method}` }, actor: u });
@@ -198,10 +216,25 @@ export const authRoutes = actionEndpoint({
     schema: z.object({ token: z.string() }),
     run: async (ctx) => {
       const u = await loadMfaUser(ctx.data.token);
+      // With an authenticator app, an emailed code would let anyone with the mailbox skip it.
+      if (u.totp_enabled) fail(400, 'Use your authenticator app, or one of your recovery codes.', { code: 'TOTP_REQUIRED' });
       const code = randomCode();
       await issueUserToken(db, u.id, 'mfa_email', 10, code);
       ctx.after(() => emails.mfaCode(u, code));
       return { ok: true, emailHint: u.email.replace(/^(.).*(@.*)$/, '$1•••$2') };
+    },
+  },
+
+  /** The "stop these emails" link in an invitation: this address will no longer be invited by any organisation. */
+  stopEmails: {
+    auth: 'public',
+    schema: z.object({ token: z.string().min(10).max(2000) }),
+    run: async (ctx) => {
+      const hash = readStopToken(ctx.data.token);
+      if (!hash) fail(400, 'This link is invalid or has expired');
+      await suppress(db, hash);
+      await audit(db, ctx, { action: 'mail.suppressed', targetType: 'email_hash', targetId: hash.slice(0, 12), actor: null });
+      return { ok: true };
     },
   },
 

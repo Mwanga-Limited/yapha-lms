@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/react';
 import { StrictMode, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
@@ -9,6 +10,29 @@ import { RegisterOrganisation } from './pages/RegisterOrganisation';
 import { PlatformApp } from './platform/PlatformApp';
 import { ToastProvider } from './ui';
 import './styles.css';
+
+// Better Stack Errors (Sentry-compatible). Off when VITE_BETTERSTACK_ERRORS_DSN is empty. The DSN is public by design.
+const errorsDsn = import.meta.env.VITE_BETTERSTACK_ERRORS_DSN as string | undefined;
+if (errorsDsn) {
+  Sentry.init({
+    dsn: errorsDsn,
+    environment: import.meta.env.MODE,
+    release: import.meta.env.VITE_RELEASE as string | undefined,
+    tracesSampleRate: 0,
+    beforeSend(event) {
+      // Addresses can carry reset tokens, invite codes and organisation names in the query string or hash: keep the path only.
+      if (event.request?.url) event.request.url = event.request.url.split(/[?#]/)[0];
+      delete event.request?.headers;
+      delete event.request?.cookies;
+      delete event.user;
+      return event;
+    },
+  });
+}
+
+function Crashed() {
+  return <div role="alert" style={{ padding: 32, fontFamily: 'sans-serif' }}><h1>Something went wrong</h1><p>Please reload the page. If it keeps happening, contact support.</p></div>;
+}
 
 /*
  * Three apps share one bundle, chosen by the address:
@@ -54,4 +78,4 @@ if (tenantMatch) {
   app = <ToastProvider><Landing /></ToastProvider>;
 }
 
-createRoot(document.getElementById('root')!).render(<StrictMode>{app}</StrictMode>);
+createRoot(document.getElementById('root')!).render(<StrictMode><Sentry.ErrorBoundary fallback={<Crashed />}>{app}</Sentry.ErrorBoundary></StrictMode>);

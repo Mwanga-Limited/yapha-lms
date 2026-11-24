@@ -1,4 +1,4 @@
-# Testing the E-Learning Platform (Phase 1, multitenant)
+# Testing Yapha LMS (Phase 1, multitenant)
 
 There are three layers of testing. Each one proves something different:
 
@@ -19,13 +19,13 @@ This assumes the app already runs locally (see README.md): API on `http://localh
 Create a **separate** database for the automated tests. It is erased on every run.
 
 ```powershell
-createdb -U postgres -p 5000 elearning_test
+createdb -U postgres -p 5000 yapha_lms_test
 ```
 
 Add this line to `backend/.env`, with your own password and port:
 
 ```
-TEST_DATABASE_URL=postgres://postgres:YOUR_PASSWORD@localhost:5000/elearning_test
+TEST_DATABASE_URL=postgres://postgres:YOUR_PASSWORD@localhost:5000/yapha_lms_test
 ```
 
 For safety, the tests refuse to run if this points at the main database, or if the database name does not contain "test".
@@ -71,6 +71,8 @@ What runs in the backend:
   - rewinding, and playing faster than 2x, don't add watched time
   - watched time never exceeds the video's length; only enrolled students can report it
 - `test/files-totp.test.js` covers authenticator-app sign-in, uploads, signed private-file links, and teachers referencing files they don't own.
+- `test/hardening.test.js` covers the pre-deployment fixes: the sign-in rate limit (page-load reads are not counted; organisations do not share a counter), Google sign-in not taking over an unverified account, uploads refused before the body is read (no session, size caps, storage quota), the invitation limits, `javascript:` links refused, request IDs, health and metrics, production configuration checks, and concurrent migrations.
+- The tests ignore `APP_DB_USER` from `backend/.env` (they set it empty), so a developer's runtime role cannot break them.
 - `test/tenancy.test.js` covers multitenancy:
   - **Member IDs.** Unique organisation and member IDs, which never change.
   - **Separate accounts.** The same email is a separate account per organisation.
@@ -102,13 +104,13 @@ What runs in the frontend (Vitest + React Testing Library, in `frontend/src/__te
 
 Files are in the `postman/` folder:
 
-- `E-Learning.postman_collection.json`: nine folders, run in order
-- `E-Learning.local.postman_environment.json`: URLs, accounts and 2FA settings
+- `Yapha-LMS.postman_collection.json`: nine folders, run in order
+- `Yapha-LMS.local.postman_environment.json`: URLs, accounts and 2FA settings
 
 ### Import
 
 1. In Postman, choose **Import**, then drop in both files.
-2. In the top-right environment picker, select **E-Learning (local, multitenant)**.
+2. In the top-right environment picker, select **Yapha LMS (local, multitenant)**.
 3. Open the environment and set:
    - `superadminEmail` and `superadminPassword` to `SUPERADMIN_EMAIL` and `SUPERADMIN_PASSWORD` from `backend/.env`
    - `tenant` (default `acme`) and `otherTenant` (default `globex`): the two organisations used
@@ -141,8 +143,8 @@ This happens seven times in the full collection.
 - **From the command line:** this is the same as CI, and is what was used to verify the collection:
 
 ```bash
-npx newman run postman/E-Learning.postman_collection.json \
-  -e postman/E-Learning.local.postman_environment.json \
+npx newman run postman/Yapha-LMS.postman_collection.json \
+  -e postman/Yapha-LMS.local.postman_environment.json \
   --env-var superadminEmail=YOU@example.com --env-var superadminPassword=YOUR_PASSWORD \
   --env-var superadminTotpSecret=SUPER_KEY --env-var adminTotpSecret=ADMIN_KEY --env-var teacherTotpSecret=TEACHER_KEY
 ```
@@ -315,10 +317,15 @@ Sign in with the `.env` Admin; 2FA is required.
 ## 6. Start again with fresh data
 
 ```powershell
-dropdb -U postgres -p 5000 elearning
-createdb -U postgres -p 5000 elearning
+dropdb -U postgres -p 5000 yapha_lms
+createdb -U postgres -p 5000 yapha_lms
 cd backend
 npm run migrate
 npm run seed:superadmin
 npm run seed:demo
 ```
+
+## Cloud features and frontend
+
+- `backend/test/cloud.test.js`: outbox/retry, authenticator hardening, invitation limits, direct uploads (in-memory bucket), scheduler endpoints, Postgres rate-limit store.
+- Frontend: `npm test` (Vitest + Testing Library + MSW), `npm run lint` (oxlint), `npm run e2e` (Playwright; needs a running backend and `E2E_DATABASE_URL`; **not run locally yet**).

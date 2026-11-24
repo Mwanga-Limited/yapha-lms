@@ -1,0 +1,18 @@
+project_id   = "my-gcp-project"
+region       = "europe-west1"
+backup_region = "europe-west4"
+image        = "europe-west1-docker.pkg.dev/my-gcp-project/yapha/app:latest"   # the deploy workflow passes the real tag
+app_url      = "https://learn.example.com"
+domain       = "learn.example.com"
+alert_email  = "oncall@example.com"
+github_repo  = "Mwanga-Limited/yapha-lms"
+mail_from    = "Yapha <no-reply@learn.example.com>"
+smtp_host    = "smtp.resend.com"
+smtp_port    = 465
+smtp_user    = "resend"
+betterstack_ingesting_host = "sXXXXXXX.region.betterstackdata.com"
+# Secrets: pass as environment variables, never commit them:
+#   export TF_VAR_smtp_password=re_...                 (Resend API key)
+#   export TF_VAR_database_url="postgresql://...-pooler.../neondb?sslmode=verify-full"
+#   export TF_VAR_database_url_unpooled="postgresql://.../neondb?sslmode=verify-full"
+#   export TF_VAR_betterstack_source_token=...  TF_VAR_betterstack_errors_dsn=...

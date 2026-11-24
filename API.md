@@ -13,7 +13,7 @@ The 8 organisation endpoints (plus a health check). Five of them take an **actio
 | 3 | `/api/acme/courses` | POST | anyone / Teacher / Admin | catalogue, course page, preview; course authoring and publishing; learners; quiz resets |
 | 4 | `/api/acme/learn` | POST | Students only | enrol, course player, lessons, progress, video position, quizzes |
 | 5 | `/api/acme/admin` | POST | Admin | dashboard, course reviews, teacher applications, users, certificates, audit log |
-| 6 | `/api/acme/upload` | POST (form-data) | signed in | upload photos, thumbnails, lesson files and videos |
+| 6 | `/api/acme/upload?purpose=…` | POST (form-data) | signed in | upload photos, thumbnails, lesson files and videos |
 | 7 | `/api/acme/files/:id` | GET | public / signed link | download an uploaded file |
 | 8 | `/api/acme/certificates/:code` | GET | anyone | verify a certificate; `?format=pdf` downloads it |
 | 9 | `/api/organisations` | POST | anyone | an organisation registers itself (section 10) |
@@ -36,7 +36,7 @@ For the five action endpoints (1–5), every request looks the same:
 { "action": "login", "data": { "email": "student@example.com", "password": "Password123!" } }
 ```
 
-**Staying signed in:** the API returns an `el_session` cookie, which Postman stores and sends automatically. So sign in once, and every later request in Postman runs as that user. To switch user, call `logout`, then sign in as someone else. You can see the cookie under **Cookies** (below the Send button).
+**Staying signed in:** the API returns an `yapha_session` cookie, which Postman stores and sends automatically. So sign in once, and every later request in Postman runs as that user. To switch user, call `logout`, then sign in as someone else. You can see the cookie under **Cookies** (below the Send button).
 
 **Admin and Teacher sign-in has two steps** (2FA):
 
@@ -232,12 +232,13 @@ The `users` search also matches member IDs, e.g. `{ "q": "ACME-000003" }`.
 
 ## 6. `POST /api/acme/upload`: files (sign in first)
 
-In Postman: **POST** `http://localhost:4000/api/acme/upload`, **Body** → **form-data**, with two rows:
+In Postman: **POST** `http://localhost:4000/api/acme/upload?purpose=photo`, **Body** → **form-data**, with one row:
 
 | Key | Type | Value |
 |---|---|---|
-| `purpose` | Text | `photo`, `thumbnail`, `lesson_file`, `lesson_video` or `logo` (Admin, PNG/JPG, 2 MB) |
 | `file` | **File** (change the type in the key's dropdown) | choose a file |
+
+The **purpose is a query parameter** (`photo`, `thumbnail`, `lesson_file`, `lesson_video` or `logo`: Admin, PNG/JPG, 2 MB), not a form field. The server checks who you are, the purpose, the declared size and the organisation's storage quota **before** it reads the file, so a refused upload writes nothing to disk. Refusals: no session → 401, unknown purpose → 400, wrong role → 403, no `Content-Length` → 411, too large or organisation storage full (`code: STORAGE_FULL`) → 413, more than `UPLOADS_PER_HOUR` uploads per user → 429.
 
 Remove any `Content-Type` header you added yourself; Postman sets the right one for form-data. Expect 200 with `file.id`, which you pass as `photoFileId` (profile), `thumbnailFileId` (`updateMeta`) or a lesson's `fileId`.
 
@@ -248,7 +249,7 @@ Remove any `Content-Type` header you added yourself; Postman sets the right one 
 | `lesson_file` | Teacher, Admin | PDF, PowerPoint, Word, Excel, ZIP, TXT, PNG, JPG | 50 MB |
 | `lesson_video` | Teacher, Admin | MP4, WebM, OGG, MOV | 500 MB |
 
-Also test: a student uploading a `lesson_file` → 403; an `.exe` → 400.
+Also test: a student uploading a `lesson_file` → 403; an `.exe` → 400; a 6 MB `photo` → 413.
 
 ## 7. `GET /api/acme/files/:id`: download a file
 
@@ -340,7 +341,21 @@ Courses include `slug` (e.g. `bookkeeping-for-small-businesses`). `courses` `det
 
 ## Health check
 
-`GET http://localhost:4000/api/health` → `{ "ok": true }`
+`GET http://localhost:4000/api/health` → `{ "ok": true, "checks": { "database": true, "migrations": true, "storage": true } }`, or 503 with the failing check set to `false` (database down, migrations pending, storage not reachable). Use it for load balancer and uptime checks.
+
+## Metrics
+
+`GET http://localhost:4000/api/metrics` with `Authorization: Bearer <METRICS_TOKEN>` → Prometheus text (request counts by status class, latency histogram, database pool, memory). Disabled (404) unless `METRICS_TOKEN` is set.
+
+## Request IDs and rate limits
+
+Every response has an `X-Request-Id` header; error bodies repeat it as `requestId`. Quote it to support; every log line for the request carries it. Send your own `X-Request-Id` (8–64 letters, digits, `-`, `_`) to correlate calls.
+
+Rate limits are counted per network address **and organisation**, and only for sign-in style actions (`login`, `register`, `google`, `verifyMfa`, `sendMfaEmail`, `requestPasswordReset`, `resetPassword`, `resendVerification`): `AUTH_RATE_LIMIT_MAX` (default 100) per 15 minutes. Reads such as `me` are not limited. A 429 carries `Retry-After`.
+
+Invitations: an Admin must have a verified email (403 `EMAIL_NOT_VERIFIED`), and an organisation can send `INVITES_PER_DAY` (50; `NEW_ORG_INVITES_PER_DAY`, 5, in its first 24 hours) invitations per 24 hours (429 `INVITE_LIMIT`).
+
+Signing in with Google to an address that was registered with a password but never verified **removes that password and authenticator app and signs out its sessions** (the response has `"notice": "PASSWORD_CLEARED"`); only the Google owner keeps access.
 
 ---
 
@@ -358,3 +373,11 @@ To show the whole flow by hand, send these in order. Steps 2–5 build the cours
 8. **Admin:** `admin/certificates` → `admin/revokeCertificate` → verify the certificate again (now `valid: false`)
 
 The Postman collection in `postman/` is this same flow, with 101 requests that check every result automatically. Import it and choose **Run collection** (see TESTING.md).
+
+## Added for the cloud deployment
+
+- `POST /upload/init {purpose, name, mime, size}` → `{mode:'direct', fileId, upload:{url, method, headers}}` (PUT the file there, then `POST /upload/complete {fileId}`) or `{mode:'form', url}` (multipart POST, development). The multipart `/upload` is refused with `USE_DIRECT_UPLOAD` when storage is a bucket.
+- `auth.verifyMfa` accepts a 6-digit code **or** a recovery code. With an authenticator app, `auth.sendMfaEmail` returns 400 `TOTP_REQUIRED`.
+- `account.totpEnable` and `platform.totpEnable` return `recoveryCodes` (shown once). New: `account.totpDisable {code, password}`, `account.regenerateRecoveryCodes {code, password}`, `account.twoFactorStatus`.
+- `admin.resendInvite {userId}`, `admin.resetTwoFactor {userId, reason}`; `auth.stopEmails {token}` (public). Invitations are limited per address across all organisations (3/day, 10/30 days) and refused for addresses that opted out (`RECIPIENT_OPTED_OUT`, `RECIPIENT_LIMIT`).
+- `POST /api/internal/outbox/drain`, `POST /api/internal/cleanup`: Cloud Scheduler only (Google identity token).

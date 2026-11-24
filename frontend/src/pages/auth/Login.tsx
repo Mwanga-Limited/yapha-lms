@@ -3,16 +3,19 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { api, errorMessage, type User } from '../../api';
 import { homeFor, useAuth, useTenant } from '../../auth';
 import { GoogleOption } from '../../components/GoogleButton';
-import { Alert, Button, Field, useDocumentTitle } from '../../ui';
+import { Alert, Button, Field, useDocumentTitle, useToast } from '../../ui';
 
-type Mfa = { token: string; method: 'totp' | 'email'; emailHint: string | null };
-type LoginResult = { user?: User; mfa?: Mfa };
+type Mfa = { token: string; method: 'totp' | 'email'; emailHint: string | null; recovery?: boolean };
+type LoginResult = { user?: User; mfa?: Mfa; notice?: string };
+
+export const PASSWORD_CLEARED_MESSAGE = 'This account had not been verified, so its old password was removed. You are signed in with Google; use “Forgot your password?” if you want a password too.';
 
 export function Login() {
   useDocumentTitle('Sign in');
   const { setUser, googleClientId } = useAuth();
   const tenant = useTenant();
   const nav = useNavigate();
+  const toast = useToast();
   const from = (useLocation().state as { from?: string } | null)?.from;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -24,6 +27,7 @@ export function Login() {
 
   const done = (r: LoginResult) => {
     if (r.mfa) { setMfa(r.mfa); setCode(''); setError(''); return; }
+    if (r.notice === 'PASSWORD_CLEARED') toast(PASSWORD_CLEARED_MESSAGE, 'ok');
     if (r.user) { setUser(r.user); nav(from || homeFor(r.user.role), { replace: true }); }
   };
   const attempt = async (fn: () => Promise<LoginResult>) => {
@@ -46,19 +50,19 @@ export function Login() {
       <div className="auth-card">
         <h1>Two-step sign-in</h1>
         <p className="muted">
-          {mfa.method === 'totp' ? 'Enter the 6-digit code from your authenticator app.' : `Enter the 6-digit code we emailed to ${mfa.emailHint}.`}
+          {mfa.method === 'totp' ? 'Enter the 6-digit code from your authenticator app, or one of your recovery codes.' : `Enter the 6-digit code we emailed to ${mfa.emailHint}.`}
         </p>
         {error && <Alert tone="error">{error}</Alert>}
         {note && <Alert tone="ok">{note}</Alert>}
         <form onSubmit={submitCode}>
-          <Field label="Sign-in code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            inputMode="numeric" autoComplete="one-time-code" autoFocus required pattern="\d{6}" className="code-input" />
+          {mfa.method === 'totp'
+            ? <Field label="Code or recovery code" value={code} onChange={(e) => setCode(e.target.value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 12))} autoComplete="one-time-code" autoFocus required className="code-input" />
+            : <Field label="Sign-in code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" autoFocus required pattern="\d{6}" className="code-input" />}
           <Button type="submit" busy={busy} className="btn-block">Verify and sign in</Button>
         </form>
         <p className="auth-foot">
-          {mfa.method === 'totp' ? <button className="link-btn" onClick={emailCode}>Email me a code instead</button>
-            : <button className="link-btn" onClick={emailCode}>Send a new code</button>}
-          {' · '}<button className="link-btn" onClick={() => { setMfa(null); setPassword(''); setNote(''); }}>Start over</button>
+          {mfa.method === 'email' && <><button className="link-btn" onClick={emailCode}>Send a new code</button>{' · '}</>}
+          <button className="link-btn" onClick={() => { setMfa(null); setPassword(''); setNote(''); }}>Start over</button>
         </p>
       </div>
     );

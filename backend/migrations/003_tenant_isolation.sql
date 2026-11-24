@@ -129,16 +129,16 @@ CREATE POLICY tenant_self ON tenants USING (app_bypass() OR id = app_tenant()) W
 -- a superuser such as "postgres". It can never update/delete the audit log or delete users.
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'elearning_app') THEN
-    CREATE ROLE elearning_app NOLOGIN NOBYPASSRLS;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'yapha_app') THEN
+    CREATE ROLE yapha_app NOLOGIN NOBYPASSRLS;
   END IF;
 END $$;
-DO $$ BEGIN EXECUTE format('GRANT elearning_app TO %I', current_user); EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN EXECUTE format('GRANT yapha_app TO %I', current_user); EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
-GRANT USAGE ON SCHEMA public TO elearning_app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO elearning_app;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO elearning_app;
-REVOKE UPDATE, DELETE, TRUNCATE ON audit_logs FROM elearning_app;
-REVOKE DELETE, TRUNCATE ON users FROM elearning_app;
-REVOKE DELETE, TRUNCATE ON tenants FROM elearning_app;
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON schema_migrations FROM elearning_app;
+GRANT USAGE ON SCHEMA public TO yapha_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO yapha_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO yapha_app;
+REVOKE UPDATE, DELETE, TRUNCATE ON audit_logs FROM yapha_app;
+REVOKE DELETE, TRUNCATE ON users FROM yapha_app;
+REVOKE DELETE, TRUNCATE ON tenants FROM yapha_app;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON schema_migrations FROM yapha_app;

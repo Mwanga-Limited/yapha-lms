@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { config } from '../config.js';
-import { asTenant, db, query, runInContext, tx } from '../db.js';
+import { asTenant, db, query, tx } from '../db.js';
 import { actionEndpoint, email, password, reqStr } from '../lib/actions.js';
 import { audit } from '../lib/audit.js';
 import { fail } from '../lib/errors.js';
@@ -70,7 +70,7 @@ export const organisationRoutes = actionEndpoint({
           await audit(db, ctx, { action: 'tenant.register', targetType: 'tenant', targetId: t.id,
             newValues: { name: t.name, slug: t.slug, firstAdmin: row.email }, actor: row });
           const token = await issueUserToken(db, row.id, 'verify_email', 24 * 60);
-          ctx.after(() => runInContext({ tenant: t }, () => emails.verify(row, token)));
+          await emails.verify(row, token);   // queued inside this transaction, in the new organisation's context
           return row;
         });
         const { rows: supers } = await query(`SELECT email FROM users WHERE tenant_id IS NULL AND role = 'superadmin' AND is_active`);

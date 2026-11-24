@@ -1,11 +1,12 @@
 import { ReferralPanel } from '../components/ReferralPanel';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { api, upload, type User } from '../api';
 import { useAuth, useTenant } from '../auth';
 import { Alert, Button, Field, TextArea, useAction, useDocumentTitle } from '../ui';
 import { passwordOk } from '../password';
 import { PasswordInput } from '../components/PasswordInput';
+import { RecoveryCodes } from '../components/RecoveryCodes';
 
 function ProfileForm() {
   const { user, setUser } = useAuth();
@@ -77,9 +78,24 @@ function PasswordForm() {
 function TwoFactor() {
   const { user, setUser } = useAuth();
   const [setup, setSetup] = useState<{ secret: string; qr: string } | null>(null);
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [left, setLeft] = useState<number | null>(null);
   const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
   const { busy, run } = useAction();
   const privileged = user!.role !== 'student';
+
+  useEffect(() => {
+    if (user!.totpEnabled) void api<{ recoveryCodesLeft: number }>('account', 'twoFactorStatus').then((r) => setLeft(r.recoveryCodesLeft)).catch(() => {});
+  }, [user!.totpEnabled, codes]);
+
+  if (codes) return <div className="panel"><RecoveryCodes codes={codes} onDone={() => setCodes(null)} /></div>;
+  const proof = (
+    <>
+      {user!.hasPassword && <Field label="Your password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />}
+      <Field label="Code from your app, or a recovery code" value={code} onChange={(e) => setCode(e.target.value.trim().slice(0, 12))} required />
+    </>
+  );
 
   return (
     <div className="panel">
@@ -89,10 +105,15 @@ function TwoFactor() {
         : <p className="muted">Optional for learners. Add an authenticator app for extra protection.</p>}
       {user!.totpEnabled ? (
         <>
-          <Alert tone="ok">Authenticator app is on.</Alert>
-          <form className="inline-form" onSubmit={(e) => { e.preventDefault(); void run(async () => { const r = await api<{ user: User }>('account', 'totpDisable', { code }); setUser(r.user); setCode(''); }, 'Authenticator app removed'); }}>
-            <Field label="Code from your app, to turn it off" inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required pattern="\d{6}" />
-            <Button variant="secondary" type="submit" busy={busy}>Turn off</Button>
+          <Alert tone="ok">Authenticator app is on.{left !== null && ` ${left} recovery code${left === 1 ? '' : 's'} left.`}</Alert>
+          {left !== null && left <= 2 && <Alert tone="error">You are running low on recovery codes. Create new ones below.</Alert>}
+          <form className="inline-form" onSubmit={(e) => { e.preventDefault(); void run(async () => { const r = await api<{ recoveryCodes: string[] }>('account', 'regenerateRecoveryCodes', { code, password }); setCodes(r.recoveryCodes); setCode(''); setPassword(''); }); }}>
+            {proof}
+            <Button variant="secondary" type="submit" busy={busy}>Create new recovery codes</Button>
+          </form>
+          <form className="inline-form" onSubmit={(e) => { e.preventDefault(); void run(async () => { const r = await api<{ user: User }>('account', 'totpDisable', { code, password }); setUser(r.user); setCode(''); setPassword(''); }, 'Authenticator app removed'); }}>
+            {proof}
+            <Button variant="secondary" type="submit" busy={busy}>Turn off the authenticator app</Button>
           </form>
         </>
       ) : setup ? (
@@ -100,7 +121,7 @@ function TwoFactor() {
           <img src={setup.qr} alt="QR code for your authenticator app" width={200} height={200} />
           <div>
             <p>Scan this with Google Authenticator, Microsoft Authenticator or a similar app. Or enter this key: <code className="secret">{setup.secret}</code></p>
-            <form className="inline-form" onSubmit={(e) => { e.preventDefault(); void run(async () => { const r = await api<{ user: User }>('account', 'totpEnable', { code }); setUser(r.user); setSetup(null); setCode(''); }, 'Authenticator app turned on'); }}>
+            <form className="inline-form" onSubmit={(e) => { e.preventDefault(); void run(async () => { const r = await api<{ user: User; recoveryCodes: string[] }>('account', 'totpEnable', { code }); setUser(r.user); setSetup(null); setCode(''); setCodes(r.recoveryCodes); }); }}>
               <Field label="6-digit code from the app" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required pattern="\d{6}" />
               <Button type="submit" busy={busy}>Turn on</Button>
             </form>

@@ -57,5 +57,5 @@ BEGIN
       WITH CHECK (app_bypass() OR tenant_id = app_tenant())$p$, t);
   END LOOP;
 END $$;
-GRANT SELECT, INSERT, UPDATE, DELETE ON payment_accounts TO elearning_app;
-GRANT SELECT, INSERT, UPDATE ON payments TO elearning_app;   -- payments are never deleted
+GRANT SELECT, INSERT, UPDATE, DELETE ON payment_accounts TO yapha_app;
+GRANT SELECT, INSERT, UPDATE ON payments TO yapha_app;   -- payments are never deleted

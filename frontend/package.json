@@ -1,7 +1,23 @@
 {
-  "name": "elearning-frontend",
+  "name": "yapha-lms-frontend",
+  "version": "0.9.1",
   "private": true,
-  "version": "1.0.0",
+  "description": "Yapha LMS web app: multitenant e-learning platform by Mwanga Limited.",
+  "author": {
+    "name": "Mwanga Limited",
+    "email": "tech@mwanga.ng",
+    "url": "https://mwanga.ng"
+  },
+  "license": "UNLICENSED",
+  "homepage": "https://yaphaacademy.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mwanga-Limited/yapha-lms.git",
+    "directory": "frontend"
+  },
+  "bugs": {
+    "email": "tech@mwanga.ng"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,22 +25,30 @@
     "typecheck": "tsc -b",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint": "oxlint src",
+    "e2e": "playwright test"
   },
   "dependencies": {
+    "@sentry/react": "^11.11.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
     "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "jsdom": "^29.1.1",
+    "msw": "^3.0.4",
+    "oxlint": "^1.93.0",
+    "pg": "^8.23.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^4.1.12"

@@ -1,0 +1,21 @@
+{
+  "plugins": [
+    "react",
+    "typescript"
+  ],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "react-hooks/exhaustive-deps": "warn",
+    "react-hooks/rules-of-hooks": "error",
+    "no-unused-vars": "warn",
+    "react/set-state-in-effect": "warn",
+    "react/refs": "warn",
+    "react/purity": "warn"
+  },
+  "env": {
+    "browser": true,
+    "es2022": true
+  }
+}

@@ -4,6 +4,7 @@ import { Alert, Button, Field, useAction, useDocumentTitle } from '../ui';
 import { usePlatformAuth } from './PlatformApp';
 import { passwordOk } from '../password';
 import { PasswordInput } from '../components/PasswordInput';
+import { RecoveryCodes } from '../components/RecoveryCodes';
 
 /** The super admin's own password and authenticator app. */
 export function PlatformAccount() {
@@ -13,6 +14,7 @@ export function PlatformAccount() {
   const [err, setErr] = useState('');
   const [setup, setSetup] = useState<{ secret: string; qr: string } | null>(null);
   const [code, setCode] = useState('');
+  const [codes, setCodes] = useState<string[] | null>(null);
   const pwAction = useAction();
   const totp = useAction();
 
@@ -37,11 +39,11 @@ export function PlatformAccount() {
         </form>
         <div className="panel">
           <h2>Two-step sign-in</h2>
-          <p className="muted">Always required. Without an authenticator app, a code is emailed at each sign-in.</p>
-          {user!.totpEnabled ? <Alert tone="ok">Authenticator app is on.</Alert> : setup ? (
+          <p className="muted">Always required. Without an authenticator app, a code is emailed at each sign-in. With one, emailed codes are no longer accepted.</p>
+          {codes ? <RecoveryCodes codes={codes} onDone={() => setCodes(null)} /> : user!.totpEnabled ? <Alert tone="ok">Authenticator app is on. If you lose it, use a recovery code, or ask whoever runs the server to reset it.</Alert> : setup ? (
             <div className="totp">
               <img src={setup.qr} alt="QR code for your authenticator app" width={200} height={200} />
-              <form className="inline-form" onSubmit={(e) => { e.preventDefault(); void totp.run(async () => { const r = await platformApi<{ user: User }>('totpEnable', { code }); setUser(r.user); setSetup(null); }, 'Authenticator app turned on'); }}>
+              <form className="inline-form" onSubmit={(e) => { e.preventDefault(); void totp.run(async () => { const r = await platformApi<{ user: User; recoveryCodes: string[] }>('totpEnable', { code }); setUser(r.user); setSetup(null); setCode(''); setCodes(r.recoveryCodes); }, 'Authenticator app turned on'); }}>
                 <p>Scan this, or enter the key <code className="secret">{setup.secret}</code></p>
                 <Field label="6-digit code from the app" inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} required pattern="\d{6}" />
                 <Button type="submit" busy={totp.busy}>Turn on</Button>

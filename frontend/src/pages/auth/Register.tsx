@@ -5,13 +5,15 @@ import { useAuth, useTenant } from '../../auth';
 import { GoogleOption } from '../../components/GoogleButton';
 import { PasswordInput } from '../../components/PasswordInput';
 import { passwordOk } from '../../password';
-import { Alert, Button, Field, TextArea, useDocumentTitle } from '../../ui';
+import { Alert, Button, Field, TextArea, useDocumentTitle, useToast } from '../../ui';
+import { PASSWORD_CLEARED_MESSAGE } from './Login';
 
 export function Register() {
   useDocumentTitle('Create account');
   const { setUser, googleClientId } = useAuth();
   const tenant = useTenant();
   const nav = useNavigate();
+  const toast = useToast();
   const [f, setF] = useState({ name: '', email: '', password: '', bio: '', expertise: '', credentialUrl: '' });
   const [confirm, setConfirm] = useState('');
   const [params] = useSearchParams();
@@ -39,7 +41,8 @@ export function Register() {
   const withGoogle = async (credential: string) => {
     setError('');
     try {
-      const r = await api<{ user?: User; mfa?: unknown }>('auth', 'google', { credential });
+      const r = await api<{ user?: User; mfa?: unknown; notice?: string }>('auth', 'google', { credential });
+      if (r.notice === 'PASSWORD_CLEARED') toast(PASSWORD_CLEARED_MESSAGE, 'ok');
       if (r.user) {
         setUser(r.user);
         // People who chose "Teach" finish their instructor application on the Teach page.

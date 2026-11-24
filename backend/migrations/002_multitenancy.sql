@@ -1,6 +1,6 @@
 -- Multitenancy: every organisation (tenant) gets its own isolated block of data.
 -- Isolation is enforced by PostgreSQL row-level security (RLS), not only by application code:
--- each request runs as the restricted role "elearning_app" with app.tenant_id set, and every
+-- each request runs as the restricted role "yapha_app" with app.tenant_id set, and every
 -- tenant table only returns / accepts rows for that tenant. Only the platform super admin
 -- (app.bypass = 'on') can see across tenants.
 

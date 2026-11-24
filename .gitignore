@@ -3,3 +3,14 @@ dist/
 uploads/
 .env
 *.log
+deploy/.env.production
+backups/
+*.tsbuildinfo
+
+# Terraform: real values, local state and provider downloads never go to git (the .example file does)
+deploy/gcp/terraform/terraform.tfvars
+deploy/gcp/terraform/*.auto.tfvars
+deploy/gcp/terraform/.terraform/
+deploy/gcp/terraform/*.tfstate
+deploy/gcp/terraform/*.tfstate.*
+deploy/gcp/terraform/crash.log

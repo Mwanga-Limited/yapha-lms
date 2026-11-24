@@ -1,9 +1,24 @@
 {
-  "name": "elearning-backend",
-  "version": "1.0.0",
+  "name": "yapha-lms-backend",
+  "version": "0.9.1",
   "private": true,
+  "description": "Yapha LMS API: multitenant e-learning platform by Mwanga Limited.",
+  "author": {
+    "name": "Mwanga Limited",
+    "email": "tech@mwanga.ng",
+    "url": "https://mwanga.ng"
+  },
+  "license": "UNLICENSED",
+  "homepage": "https://yaphaacademy.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mwanga-Limited/yapha-lms.git",
+    "directory": "backend"
+  },
+  "bugs": {
+    "email": "tech@mwanga.ng"
+  },
   "type": "module",
-  "description": "E-Learning Platform API (Node.js + Express + PostgreSQL)",
   "engines": {
     "node": ">=20"
   },
@@ -14,10 +29,18 @@
     "seed:superadmin": "node src/scripts/seed-superadmin.js",
     "seed:demo": "node src/scripts/seed-demo.js",
     "brand:yapha": "node src/scripts/brand-yapha.js",
-    "test": "node --test --test-concurrency=1 --test-reporter=spec test/rules.test.js test/files-totp.test.js test/tenancy.test.js test/payments.test.js test/referrals.test.js test/course-slugs.test.js",
-    "test:coverage": "node --test --test-concurrency=1 --experimental-test-coverage --test-coverage-exclude=test/** test/rules.test.js test/files-totp.test.js test/tenancy.test.js test/payments.test.js test/referrals.test.js test/course-slugs.test.js"
+    "test": "node --test --test-concurrency=1 --test-reporter=spec test/rules.test.js test/files-totp.test.js test/tenancy.test.js test/payments.test.js test/hardening.test.js test/cloud.test.js test/referrals.test.js test/course-slugs.test.js",
+    "test:coverage": "node --test --test-concurrency=1 --experimental-test-coverage --test-coverage-exclude=test/** test/rules.test.js test/files-totp.test.js test/tenancy.test.js test/payments.test.js test/hardening.test.js test/referrals.test.js test/course-slugs.test.js",
+    "secrets:encrypt-totp": "node src/scripts/encrypt-totp-secrets.js",
+    "reset:superadmin-2fa": "node src/scripts/reset-superadmin-2fa.js",
+    "files:to-gcs": "node src/scripts/migrate-files-to-gcs.js",
+    "backup": "node src/scripts/backup.js",
+    "outbox:worker": "node src/scripts/outbox-worker.js"
   },
   "dependencies": {
+    "@google-cloud/storage": "^8.4.0",
+    "@logtail/node": "^0.6.1",
+    "@sentry/node": "^11.11.0",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "dotenv": "^18.0.9",

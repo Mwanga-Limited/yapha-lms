@@ -22,12 +22,16 @@ export function actionEndpoint(handlers) {
       if (h.verified && !user.email_verified_at && !user.isSuper) throw new HttpError(403, 'Please verify your email address first', { code: 'EMAIL_NOT_VERIFIED' });
     }
     const data = h.schema ? h.schema.parse(req.body?.data ?? {}) : (req.body?.data ?? {});
-    req.afterCommit ??= [];
+    const queued = [];
     const ctx = {
       req, res, user, data, ip: req.ip, ua: (req.get('user-agent') || '').slice(0, 300),
-      after: (fn) => req.afterCommit.push(fn),   // run after the transaction commits (e.g. send emails)
+      // Emails: queued here, written to the email outbox at the end of the handler INSIDE the request's transaction
+      // (nothing is sent if the request fails or is rolled back; delivery is attempted after the commit).
+      after: (fn) => queued.push(fn),
     };
-    return (await h.run(ctx)) ?? { ok: true };
+    const result = (await h.run(ctx)) ?? { ok: true };
+    for (const fn of queued) await fn();
+    return result;
   };
 }
 
@@ -49,3 +53,5 @@ export const password = z.string().max(200).superRefine((p, ctx) => {
 });
 export const email = z.string().trim().toLowerCase().email('Enter a valid email').max(254);
 export const page = z.coerce.number().int().min(1).max(10000).default(1);
+/** A web link. Only http(s) is accepted, so a stored link can never be a javascript: or data: URL. */
+export const httpUrl = z.string().trim().max(500).refine((v) => { try { return ['http:', 'https:'].includes(new URL(v).protocol); } catch { return false; } }, 'Enter a web link starting with http:// or https://');
