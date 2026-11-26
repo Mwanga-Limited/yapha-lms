@@ -43,6 +43,8 @@ export function createApp() {
     crossOriginEmbedderPolicy: false,
     // Helmet's default ("same-origin") cuts the Google sign-in popup off from this page, so it ends on a blank screen.
     crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+    // Helmet's default ("no-referrer") makes YouTube's embedded player fail with Error 153. Other sites get the origin only.
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     contentSecurityPolicy: {
       directives: {
         'default-src': ["'self'"],

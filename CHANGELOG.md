@@ -3,6 +3,9 @@
 All notable changes to Yapha LMS. Format based on [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
+### Fixed
+- Embedded YouTube videos no longer fail with Error 153: the referrer policy is now `strict-origin-when-cross-origin` (other sites receive the site's origin only), instead of `no-referrer`.
+
 ### Changed
 - Course pricing is optional. A course without a price is free and learners enrol straight away ("Enrol for free"), with or without a referral code. A price, when set, must be at least ₦1,000 (Admin price, approval price and the teacher's suggestion). Approving changes to a free course keeps it free.
 
