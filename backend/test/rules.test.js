@@ -174,17 +174,17 @@ describe('Course approval (CR-01 … CR-05)', () => {
     assert.equal(cat.courses.length, 1);
   });
 
-  test('CR-04: content changes on a published course need re-approval; the live version stays visible', async () => {
+  test('CR-04: changes to a published course (content and details) need re-approval; the live version stays visible', async () => {
     const id = await publishedCourse(teacher, root, 'Living Course');
     const changed = sampleContent();
     changed.sections[0].items[0].title = 'Welcome (new)';
     await call(teacher, 'courses', 'saveContent', { id, content: changed }).expect(409);          // must start a revision
-    await call(teacher, 'courses', 'updateMeta', { id, title: 'Living Course', summary: 'Typo fixed', category: 'Mathematics', outline: 'o' }).expect(200);
     await call(teacher, 'courses', 'startRevision', { id }).expect(200);
+    await call(teacher, 'courses', 'updateMeta', { id, title: 'Living Course', summary: 'Typo fixed', category: 'Mathematics', outline: 'o' }).expect(200);
     await call(teacher, 'courses', 'saveContent', { id, content: changed }).expect(200);
     await call(teacher, 'courses', 'submit', { id }).expect(200);
     let d = (await call(agent(), 'courses', 'detail', { id })).body;
-    assert.equal(d.course.summary, 'Typo fixed');                                                   // minor edit is live
+    assert.equal(d.course.summary, 'Learn algebra');                                                // details wait for approval too
     assert.equal(d.outline[0].items[0].title, 'Welcome');                                           // old content still live
     assert.equal(d.course.status, 'published');
     const v = (await call(root, 'admin', 'reviewQueue')).body.queue.find((x) => x.course.id === id);
@@ -192,6 +192,7 @@ describe('Course approval (CR-01 … CR-05)', () => {
     await call(root, 'admin', 'approveCourse', { versionId: v.versionId }).expect(200);
     d = (await call(agent(), 'courses', 'detail', { id })).body;
     assert.equal(d.outline[0].items[0].title, 'Welcome (new)');
+    assert.equal(d.course.summary, 'Typo fixed');
   });
 
   test('CR-05: unpublished courses stay open to learners; enrolled courses cannot be deleted', async () => {

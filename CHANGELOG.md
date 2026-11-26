@@ -3,6 +3,14 @@
 All notable changes to Yapha LMS. Format based on [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
+### Changed
+- Editing a published course: changes to its details (title, summary, description, outline, category, level, language, thumbnail) now wait on the course's revision with any lesson changes, and reach learners only when an Admin approves them. Before, they went live straight away.
+- Admins can edit any course (details, lessons, quizzes and the completion rule) and submit it for review, like its teacher.
+
+### Added
+- Audit event `course.edit` for every change to a published course's details, with the old and new values. The Admin's review page shows the changed details next to the live ones, and the review queue marks revisions that change them.
+- Migration `012_edit_published_courses.sql` (`course_versions.meta`).
+
 
 ## [0.9.1] - 2026-11-10
 ### Changed

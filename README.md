@@ -243,6 +243,13 @@ Build the `Dockerfile`, copy `deploy/.env.production.example` to `deploy/.env.pr
 - **Teachers and students** see their totals (enrolments and courses) and, per course, each learner's name, date and email with most of it hidden (`b***@example.com`).
 - **Admins** see **Admin › Referrals**: every member whose code was used, with the same totals and, per course, each learner's **full** email, name and date.
 
+## Editing a published course
+
+- **The course's teacher or an Admin** can edit a published course: its details (title, summary, description, outline, category, level, language, thumbnail), lessons, quizzes and completion rule. Admins open it from **Admin › All courses › course › Edit course**.
+- **Edits go live only after an Admin approves them.** They are saved on a revision (started automatically on the first change); learners keep seeing the live course meanwhile. Submit the revision from the **Review** tab; the reviewing Admin sees the changed details next to the live ones. A rejected revision can be fixed and resubmitted; **Discard revision** throws the changes away.
+- **Every edit is audited:** `course.edit` (details, with old and new values), `course.content_saved` (lessons and quizzes), then `course.submit` and `course.approve` / `course.reject`.
+- The price is separate: only an Admin sets it, and it changes straight away. The web address never changes after publishing.
+
 ## Course web addresses
 
 Courses have a readable address made from the title, e.g. `/yapha/courses/bookkeeping-for-small-businesses` and `/yapha/learn/bookkeeping-for-small-businesses`, instead of an ID. If two courses have the same title, the second gets `-2`. The address follows the title until the course is first published; after that it never changes, so shared links keep working. Old links with the course ID still work and move to the readable address.

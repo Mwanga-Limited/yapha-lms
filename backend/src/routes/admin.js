@@ -12,7 +12,7 @@ import { currentTenant, emailAllowed, publicTenant, settingsOf, settingsSchema }
 import { reserveInvite } from '../lib/mailguard.js';
 import { clearRecoveryCodes } from '../lib/totp.js';
 import { issueUserToken } from '../lib/tokens.js';
-import { courseMeta, priceSchema } from './courses.js';
+import { courseMeta, detailChanges, detailsOf, pendingDetails, priceSchema } from './courses.js';
 import { toMinor } from '../lib/money.js';
 import { byCourse, referredEnrolments } from '../lib/referrals.js';
 
@@ -88,13 +88,14 @@ export const adminRoutes = actionEndpoint({
     auth: ADMIN,
     run: async () => {
       const { rows } = await query(
-        `SELECT v.id AS version_id, v.version_no, v.submitted_at, v.content, c.*, u.name AS teacher_name, u.email AS teacher_email,
+        `SELECT v.id AS version_id, v.version_no, v.submitted_at, v.content, v.meta AS pending_meta, c.*, u.name AS teacher_name, u.email AS teacher_email,
                 (SELECT count(*) FROM course_reviews r WHERE r.course_id = c.id AND r.decision = 'rejected') AS rejections
            FROM course_versions v JOIN courses c ON c.id = v.course_id JOIN users u ON u.id = c.teacher_id
           WHERE v.status = 'in_review' ORDER BY v.submitted_at`);
       return {
         queue: rows.map((r) => ({
           versionId: r.version_id, versionNo: r.version_no, submittedAt: r.submitted_at, isRevision: !!r.live_version_id,
+          detailsChanged: !!(r.live_version_id && r.pending_meta),
           course: courseMeta(r), teacherName: r.teacher_name, teacherEmail: r.teacher_email, rejections: r.rejections,
           lessonCount: lessonsOf(r.content).length, quizCount: quizzesOf(r.content).length,
         })),
@@ -119,9 +120,17 @@ export const adminRoutes = actionEndpoint({
       const price = ctx.data.price !== undefined ? toMinor(ctx.data.price) : (c.price_minor > 0 ? c.price_minor : c.suggested_price_minor);
       if (!(price > 0)) fail(400, 'Set a price for this course: every course is paid', { code: 'PRICE_REQUIRED' });
       await db.query(`UPDATE courses SET live_version_id = $2, draft_version_id = NULL, status = $3, price_minor = $4, updated_at = now() WHERE id = $1`, [c.id, v.id, newStatus, price]);
+      // A revision that changes the course's details (title, summary…): they go live now, with the new content.
+      const details = isRevision && v.meta ? detailChanges(detailsOf(c), pendingDetails(c, v)) : null;
+      if (details?.changed) {
+        const m = pendingDetails(c, v);
+        await db.query(
+          `UPDATE courses SET title=$2, summary=$3, description=$4, outline=$5, category=$6, level=$7, language=$8, thumbnail_file_id=$9, suggested_price_minor=$10
+            WHERE id = $1`, [c.id, m.title, m.summary, m.description, m.outline, m.category, m.level, m.language, m.thumbnail_file_id, m.suggested_price_minor]);
+      }
       await db.query(`INSERT INTO course_reviews (course_id, version_id, version_no, admin_id, decision, reason) VALUES ($1,$2,$3,$4,'approved', nullif($5, ''))`,
         [c.id, v.id, v.version_no, ctx.user.id, ctx.data.note]);
-      await audit(db, ctx, { action: 'course.approve', targetType: 'course', targetId: c.id, oldValues: { status: c.status }, newValues: { status: newStatus, versionNo: v.version_no, revision: isRevision, price } });
+      await audit(db, ctx, { action: 'course.approve', targetType: 'course', targetId: c.id, oldValues: { status: c.status }, newValues: { status: newStatus, versionNo: v.version_no, revision: isRevision, price, ...(details?.changed ? { details: details.newV } : {}) } });
       await notify(db, c.teacher_id, { type: 'course', title: `Approved: ${c.title}`, body: isRevision ? 'Your changes are now live.' : 'You can now publish it.', link: `/teach/courses/${c.id}` });
       const { rows: [t] } = await db.query(`SELECT * FROM users WHERE id = $1`, [c.teacher_id]);
       ctx.after(() => emails.courseDecision(t, { ...c, live: isRevision }, true));

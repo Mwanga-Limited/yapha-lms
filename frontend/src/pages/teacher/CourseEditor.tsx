@@ -4,8 +4,12 @@ import { ApiError, api, type Content, type CourseMeta, type VersionStatus } from
 import { ContentPreview } from '../../components/ContentPreview';
 import { Learners } from '../../components/Learners';
 import { Alert, Button, ErrorState, Field, Loading, Select, StatusBadge, Tabs, TextArea, fmtDateTime, useAction, useDocumentTitle, useLoad } from '../../ui';
+import { useAuth } from '../../auth';
 import { ContentBuilder } from './ContentBuilder';
 import { formatMoney, fromMinor } from '../../money';
+
+/** The editable details of a course. */
+export type CourseDetails = Pick<CourseMeta, 'title' | 'summary' | 'description' | 'outline' | 'category' | 'level' | 'language' | 'thumbnailFileId' | 'thumbnailUrl' | 'suggestedPrice'>;
 
 export interface CourseGet {
   course: CourseMeta;
@@ -13,7 +17,8 @@ export interface CourseGet {
   enrollments: number;
   fileUrls: Record<string, string>;
   live: { id: string; versionNo: number; content: Content; reviewedAt: string } | null;
-  draft: { id: string; versionNo: number; status: VersionStatus; content: Content; submittedAt: string | null; updatedAt: string } | null;
+  /** details: a published course's changed details, waiting with this revision for an Admin's approval (null = unchanged). */
+  draft: { id: string; versionNo: number; status: VersionStatus; content: Content; submittedAt: string | null; updatedAt: string; details: CourseDetails | null } | null;
   problems: string[];
   reviews: { id: string; versionNo: number; decision: 'approved' | 'rejected'; reason: string | null; adminName: string; createdAt: string }[];
 }
@@ -22,20 +27,27 @@ type Tab = 'details' | 'content' | 'review' | 'learners';
 
 function DetailsForm({ g, onSaved }: { g: CourseGet; onSaved: () => void }) {
   const c = g.course;
-  const [f, setF] = useState({ title: c.title, summary: c.summary, description: c.description, outline: c.outline, category: c.category, level: c.level, language: c.language,
-    suggestedPrice: String(fromMinor(c.suggestedPrice ?? 0)) });
+  const d = g.draft?.details ?? c;   // a live course: show the changes waiting for approval, if any
+  const [f, setF] = useState({ title: d.title, summary: d.summary, description: d.description, outline: d.outline, category: d.category, level: d.level, language: d.language,
+    suggestedPrice: String(fromMinor(d.suggestedPrice ?? 0)) });
   const { busy, run } = useAction();
-  const locked = c.status === 'in_review' || c.status === 'archived';
+  const inReview = c.status === 'in_review' || g.draft?.status === 'in_review';
+  const locked = inReview || c.status === 'archived';
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
 
   const save = (e: FormEvent) => {
     e.preventDefault();
-    void run(async () => { await api('courses', 'updateMeta', { id: c.id, ...f, suggestedPrice: Number(f.suggestedPrice) || 0 }); onSaved(); }, g.live ? 'Saved. The changes are live.' : 'Details saved');
+    void run(async () => { await api('courses', 'updateMeta', { id: c.id, ...f, suggestedPrice: Number(f.suggestedPrice) || 0 }); onSaved(); }, g.live ? 'Saved. Submit for review to make the changes live.' : 'Details saved');
   };
   return (
     <form onSubmit={save} className="panel">
-      {g.live && <Alert tone="info">This course has an approved version. Edits to these details (typos, descriptions) go live straight away. Lessons, quizzes and the completion rule go through review.</Alert>}
-      {c.status === 'in_review' && <Alert tone="info">The course is being reviewed. You can edit it again after the decision.</Alert>}
+      {g.live && !inReview && (
+        <Alert tone="info">
+          This course is live. Changes to its details are saved with your revision and reach learners only after an Admin approves them.
+          {' '}When you're ready, submit them from the <strong>Review</strong> tab.{g.draft?.details && <> <strong>You have changes waiting to be submitted.</strong></>}
+        </Alert>
+      )}
+      {inReview && <Alert tone="info">{g.live ? 'Your changes are' : 'The course is'} being reviewed. You can edit it again after the decision.</Alert>}
       <fieldset disabled={locked} className="plain">
         <Field label="Title" value={f.title} onChange={set('title')} required maxLength={200} />
         <Field label="Summary" hint="One or two sentences shown on the course card." value={f.summary} onChange={set('summary')} maxLength={500} />
@@ -200,6 +212,7 @@ export function CourseActions({ g, reload, after }: { g: CourseGet; reload: () =
 export function CourseEditor() {
   const { id = '' } = useParams();
   const nav = useNavigate();
+  const { user } = useAuth();
   const { data, error, loading, reload } = useLoad(() => api<CourseGet>('courses', 'get', { id }), [id]);
   const [tab, setTab] = useState<Tab>('content');
   useDocumentTitle(data?.course.title ?? 'Course');
@@ -214,7 +227,9 @@ export function CourseEditor() {
     <>
       <div className="page-head editor-head">
         <div>
-          <Link to="/teach" className="small">Your courses</Link>
+          {user?.role === 'admin' && user.id !== g.teacher.id
+            ? <Link to={`/admin/courses/${g.course.id}`} className="small">Back to the Admin view</Link>
+            : <Link to="/teach" className="small">Your courses</Link>}
           <h1>{g.course.title}</h1>
           <div className="row-gap"><StatusBadge status={g.course.status} />{revision && <span className="badge badge-in_review">{revision}</span>}<span className="muted small">{g.enrollments} enrolled</span></div>
         </div>

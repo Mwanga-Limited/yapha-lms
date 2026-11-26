@@ -784,3 +784,10 @@ fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; }
 .course-referrals { margin: 0 0 18px; }
 .course-referrals h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 1rem; }
 .referees-table { padding: 4px 0; }
+
+/* A revision's changed course details, shown to the reviewing Admin */
+.detail-changes { margin-top: 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); overflow-x: auto; }
+.detail-changes h3 { margin: 0; padding: 10px 14px; font-size: var(--step-0); border-bottom: 1px solid var(--line); }
+.detail-changes td { white-space: pre-line; overflow-wrap: anywhere; }
+.detail-changes td:first-child { white-space: nowrap; font-weight: 600; }
+.thumb-sm { width: 96px; height: auto; border-radius: 6px; display: block; }
