@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ApiError, api, type LessonPayload, type OutlineItem, type OutlineSection, type Progress, apiUrl } from '../../api';
+import { ApiError, api, type LessonPayload, type OutlineItem, type OutlineSection, type Progress, type SectionLock, apiUrl } from '../../api';
 import { LessonView } from '../../components/LessonView';
 import { Alert, Button, Empty, Loading, ProgressBar, useAction, useDocumentTitle, useLoad, useToast } from '../../ui';
 import { watchLabel, type WatchState } from '../../watch';
@@ -11,8 +11,36 @@ interface PlayerData {
   outline: OutlineSection[];
   progress: Progress;
   resumeItemId: string | null;
+  /** afterHours: the course opens this long after enrolling (null = at once). Sections open in order. */
+  unlock?: { afterHours: number | null; enrolledAt: string };
   completedAt: string | null;
   certificate: { code: string; issuedAt: string; revoked: boolean; revokeReason: string | null } | null;
+}
+
+/** Why a section is locked, in a few words: "Opens 28 Nov, 10:00" or "Complete “Basics” first". */
+function lockText(lock: SectionLock): string {
+  return lock.reason === 'time' && lock.opensAt
+    ? `Opens ${new Date(lock.opensAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+    : `Complete “${lock.after ?? 'the previous section'}” first`;
+}
+
+function LockedPanel({ lock }: { lock: SectionLock | null }) {
+  return (
+    <div className="panel locked-panel" data-testid="locked-panel">
+      <span className="lock-icon" aria-hidden>🔒</span>
+      {lock?.reason === 'time' && lock.opensAt ? (
+        <>
+          <h2>This course opens soon</h2>
+          <p>It opens on <strong>{new Date(lock.opensAt).toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}</strong>. Come back then to start learning.</p>
+        </>
+      ) : (
+        <>
+          <h2>This section is locked</h2>
+          <p>Complete every lesson and pass every quiz in <strong>“{lock?.after ?? 'the previous section'}”</strong> to unlock it.</p>
+        </>
+      )}
+    </div>
+  );
 }
 
 export function Player() {
@@ -22,6 +50,8 @@ export function Player() {
   const toast = useToast();
   const { data, error, loading, reload, setData } = useLoad(() => api<PlayerData>('learn', 'player', { courseId: courseRef }), [courseRef]);
   const courseId = data?.course.id ?? '';
+  const anyLocked = useRef(false);   // is any section still locked? (then finishing an item may unlock one)
+  useEffect(() => { anyLocked.current = !!data?.outline.some((s) => s.locked); }, [data]);
   // An old link with the course ID: show the readable address instead.
   useEffect(() => {
     if (data && data.course.slug && courseRef !== data.course.slug) nav(`/learn/${data.course.slug}${window.location.search}`, { replace: true });
@@ -32,17 +62,17 @@ export function Player() {
   useDocumentTitle(data?.course.title ?? 'Course');
 
   const items = useMemo(() => data?.outline.flatMap((s) => s.items) ?? [], [data]);
-  const currentId = params.get('item') || data?.resumeItemId || items[0]?.id || null;
+  const currentId = params.get('item') || data?.resumeItemId || items.find((i) => !i.locked)?.id || items[0]?.id || null;
   const current = items.find((i) => i.id === currentId) ?? items[0];
   const idx = current ? items.indexOf(current) : -1;
 
   useEffect(() => {
     setLesson(null);
-    if (!current || current.kind !== 'lesson') return;
+    if (!current || current.kind !== 'lesson' || current.locked) return;
     api<{ lesson: LessonPayload; completed: boolean; positionSec: number; watch: WatchState | null }>('learn', 'lesson', { courseId, lessonId: current.id })
       .then(setLesson).catch((e) => toast(e.message, 'error'));
     setDrawer(false);
-  }, [courseId, current?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [courseId, current?.id, current?.locked]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const go = (it?: OutlineItem) => { if (it) { setParams({ item: it.id }); window.scrollTo({ top: 0 }); } };
 
@@ -66,7 +96,8 @@ export function Player() {
       ...d, progress,
       outline: d.outline.map((s) => ({ ...s, items: s.items.map((it) => (it.id === doneId ? { ...it, ...patch } : it)) })),
     }));
-    if (certificate) { toast('Course complete — your certificate is ready'); void reload(); }
+    if (certificate) toast('Course complete — your certificate is ready');
+    if (certificate || anyLocked.current) void reload();   // finishing an item can unlock the next section
   };
 
   const complete = async () => {
@@ -107,12 +138,12 @@ export function Player() {
         <aside className={`player-side ${drawer ? 'open' : ''}`} aria-label="Course contents">
           {data.outline.map((s) => (
             <section key={s.id}>
-              <h3>{s.title}</h3>
+              <h3>{s.locked && <span aria-hidden>🔒 </span>}{s.title}{s.locked && <span className="side-section-lock">{lockText(s.locked)}</span>}</h3>
               <ul>
                 {s.items.map((it) => (
                   <li key={it.id}>
-                    <button className={`side-item ${it.id === current?.id ? 'current' : ''} ${it.done ? 'done' : ''}`} onClick={() => go(it)} aria-current={it.id === current?.id || undefined}>
-                      <span className="side-check" aria-hidden>{it.done ? '✓' : it.kind === 'quiz' && it.state?.lockedUntil ? '⏳' : ''}</span>
+                    <button className={`side-item ${it.id === current?.id ? 'current' : ''} ${it.done ? 'done' : ''} ${it.locked ? 'locked' : ''}`} onClick={() => go(it)} aria-current={it.id === current?.id || undefined}>
+                      <span className="side-check" aria-hidden>{it.done ? '✓' : it.locked ? '🔒' : it.kind === 'quiz' && it.state?.lockedUntil ? '⏳' : ''}</span>
                       <span className="side-text">
                         <span>{it.title}</span>
                         <small>{it.kind === 'quiz' ? 'Quiz' : it.type === 'video' ? 'Video' : it.type === 'file' ? 'File' : 'Reading'}{it.required ? ' · required' : ''}</small>
@@ -142,6 +173,14 @@ export function Player() {
             </div>
           )}
           {data.course.status !== 'published' && <Alert tone="info">This course is no longer in the catalog, but you keep access to it.</Alert>}
+          {(() => {
+            const wait = data.outline.find((s) => s.locked?.reason === 'time')?.locked;
+            return wait?.opensAt ? (
+              <Alert tone="info" title="This course opens soon">
+                It opens on <strong>{new Date(wait.opensAt).toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'short' })}</strong>. Until then you can open the free preview lessons.
+              </Alert>
+            ) : null;
+          })()}
 
           {!current && <Empty title="This course has no lessons yet" />}
           {current && (
@@ -150,7 +189,8 @@ export function Player() {
                 <span className="muted small">{idx + 1} of {items.length}{current.required ? ' · required to complete' : ''}</span>
                 <h1>{current.title}</h1>
               </div>
-              {current.kind === 'lesson' && (lesson && lesson.lesson.id === current.id ? (
+              {current.locked && <LockedPanel lock={data.outline.find((s) => s.items.some((i) => i.id === current.id))?.locked ?? null} />}
+              {!current.locked && current.kind === 'lesson' && (lesson && lesson.lesson.id === current.id ? (
                 <>
                   <LessonView lesson={lesson.lesson} startAt={lesson.positionSec} onPosition={(sec, d, leaving) => savePosition(lesson.lesson.id, sec, d, leaving)} />
                   <div className="lesson-actions">
@@ -169,7 +209,7 @@ export function Player() {
                   </div>
                 </>
               ) : <Loading />)}
-              {current.kind === 'quiz' && (
+              {!current.locked && current.kind === 'quiz' && (
                 <QuizView courseId={courseId} quizId={current.id} onSubmitted={(r: QuizSubmitted) =>
                   applyProgress(r.progress, current.id, { done: r.state.passed, state: r.state }, r.certificate)} />
               )}

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type CourseMeta, type LessonPayload, type OutlineSection } from '../api';
 import { useAuth } from '../auth';
 import { LessonView } from '../components/LessonView';
+import { describeDelay } from '../components/UnlockSetting';
 import { formatMoney } from '../money';
 import { forgetReferral, rememberedReferral } from '../referral';
 import { Alert, Button, ErrorState, Loading, Modal, StatusBadge, levelLabel, plural, useAction, useDocumentTitle, useLoad } from '../ui';
@@ -13,6 +14,8 @@ interface Detail {
   teacher: { id: string; name: string; bio: string | null; expertise: string | null; photoUrl: string | null; courses: number };
   viewer: { enrolled: boolean; completed: boolean; canManage: boolean; signedIn: boolean; emailVerified: boolean };
   paymentsReady: boolean;
+  /** Sections open in order; afterHours: the course opens this long after enrolling (null = at once). */
+  unlock?: { afterHours: number | null };
 }
 
 export function CourseDetail() {
@@ -64,6 +67,7 @@ export function CourseDetail() {
             <li>{course.language}</li>
             <li>{plural(lessons, 'lesson')}, {plural(quizzes, 'quiz')}</li>
             <li>{plural(course.learners, 'learner')}</li>
+            <li data-testid="unlock-fact">{data.unlock?.afterHours ? `Opens ${describeDelay(data.unlock.afterHours)} after you enrol` : 'Sections unlock in order'}</li>
           </ul>
           {course.status !== 'published' && <p><StatusBadge status={course.status} /> <span className="muted">This course is not in the catalog.</span></p>}
           <div className="detail-cta">

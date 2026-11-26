@@ -6,6 +6,7 @@ import { Learners } from '../../components/Learners';
 import { Alert, Button, ErrorState, Field, Loading, ReasonModal, StatusBadge, Tabs, TextArea, fmtDateTime, levelLabel, useAction, useDocumentTitle, useLoad, useToast } from '../../ui';
 import { CourseActions, type CourseGet } from '../teacher/CourseEditor';
 import { AdminNav } from './Dashboard';
+import { UnlockDelayField, describeUnlock } from '../../components/UnlockSetting';
 import { formatMoney, fromMinor } from '../../money';
 import type { CourseMeta } from '../../api';
 
@@ -25,6 +26,30 @@ function PriceEditor({ c, reload }: { c: CourseMeta; reload: () => Promise<void>
       <form className="row-gap" onSubmit={(e) => { e.preventDefault(); void run(async () => { await api('courses', 'setPrice', { id: c.id, price: Number(price) }); await reload(); }, 'Price saved'); }}>
         <Field label={`Price (${c.currency})`} type="number" min={1} max={10000000} step="0.01" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} />
         <Button type="submit" busy={busy} disabled={!changed || price === ''}>Save price</Button>
+      </form>
+    </section>
+  );
+}
+
+/**
+ * The Admin sets the course's time-based unlocking directly: it applies to the live course at once (and to any revision).
+ * Sections always open in order. A teacher's proposed change instead waits for approval with the rest of the course.
+ */
+function UnlockEditor({ g, reload }: { g: CourseGet; reload: () => Promise<void> }) {
+  const current = (g.live ?? g.draft)?.content.unlock?.afterHours ?? null;
+  const proposed = g.live && g.draft ? g.draft.content.unlock?.afterHours ?? null : current;
+  const [afterHours, setAfterHours] = useState<number | null>(current);
+  const { busy, run } = useAction();
+  return (
+    <section className="panel price-panel" data-testid="unlock-editor">
+      <h2>Unlocking</h2>
+      <p className="muted small">{describeUnlock(current)} A change here applies straight away.</p>
+      {proposed !== current && (
+        <Alert tone="info">The teacher's revision changes this to: {describeUnlock(proposed)} It takes effect if you approve the revision.</Alert>
+      )}
+      <form className="stack" onSubmit={(e) => { e.preventDefault(); void run(async () => { await api('courses', 'setUnlock', { id: g.course.id, unlock: { afterHours } }); await reload(); }, 'Unlocking saved'); }}>
+        <UnlockDelayField value={current} onChange={setAfterHours} />
+        <div><Button type="submit" busy={busy} disabled={afterHours === current}>Save unlocking</Button></div>
       </form>
     </section>
   );
@@ -90,6 +115,7 @@ export function AdminCourse() {
       )}
 
       {!newInReview && <PriceEditor key={`${c.id}-${c.price}`} c={c} reload={reload} />}
+      {c.status !== 'archived' && <UnlockEditor key={`${c.id}-${(g.live ?? g.draft)?.content.unlock?.afterHours ?? 'none'}`} g={g} reload={reload} />}
 
       <div className="meta-grid">
         <div><span className="muted small">Category</span><div>{c.category || '—'}</div></div>

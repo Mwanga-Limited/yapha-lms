@@ -68,8 +68,12 @@ export interface OutlineItem {
   id: string; kind: 'lesson' | 'quiz'; title: string; required: boolean;
   type?: LessonType; preview?: boolean; durationMin?: number | null; questionCount?: number;
   done?: boolean; state?: QuizState;
+  /** Player only: the learner can't open this item yet (its section is locked). */
+  locked?: boolean;
 }
-export interface OutlineSection { id: string; title: string; items: OutlineItem[] }
+/** Player only: why a section is locked for this learner (null = open). */
+export interface SectionLock { reason: 'time' | 'completion'; opensAt: string | null; after: string | null }
+export interface OutlineSection { id: string; title: string; items: OutlineItem[]; locked?: SectionLock | null }
 
 export type { WatchState } from './watch';
 export interface LessonPayload {
@@ -87,7 +91,8 @@ export interface LessonItem {
 export interface QuizItem { id: string; kind: 'quiz'; title: string; description: string; questions: Question[] }
 export type Item = LessonItem | QuizItem;
 export interface Section { id: string; title: string; items: Item[] }
-export interface Content { sections: Section[]; completion: { lessons: string[]; quizzes: string[] } }
+/** unlock.afterHours: optional time-based unlocking (the course opens this long after enrolling; null = at once). Sections always open in order. */
+export interface Content { sections: Section[]; completion: { lessons: string[]; quizzes: string[] }; unlock?: { afterHours: number | null } }
 
 export interface Progress { total: number; done: number; percent: number; ruleMet?: boolean }
 

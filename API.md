@@ -126,12 +126,15 @@ The token for `verifyEmail` / `resetPassword` is the part after `token=` in the 
 | `submit` | `{ "id": "<courseId>" }` | 200, status `in_review` | Empty course → 422 with `problems` (CR-01). Unverified email → 403. |
 | `publish` | `{ "id": "<courseId>" }` | 200 after Admin approval | Before approval → 409 (CR-02) |
 | `unpublish` | `{ "id": "<courseId>" }` | 200; hidden from catalogue, learners keep access (CR-05) | |
+| `setUnlock` | `{ "id": "<courseId>", "unlock": { "afterHours": 48 } }` (`null` = no delay) | 200; Admin only; applies to the live course (and any revision) straight away. Audited as `course.unlock_set`. | Teacher → 403; `afterHours` must be a whole number from 1 to 8760 |
 | `startRevision` | `{ "id": "<courseId>" }` | 200; creates an editable copy of a published course (CR-04) | |
 | `discardRevision` | `{ "id": "<courseId>" }` | 200; throws the copy away | |
 | `archive` | `{ "id": "<courseId>" }` | 200 | |
 | `remove` | `{ "id": "<courseId>" }` | 200 only for a never-reviewed draft | With enrolments or review history → 409 (CR-05) |
 | `learners` | `{ "id": "<courseId>" }` | 200, each learner's progress and quiz attempts | |
 | `resetAttempts` | `{ "enrollmentId": "<from learners>", "quizId": "q1" }` | 200; learner gets 3 new attempts (QZ-02) | Student → 403 |
+
+**Unlocking.** Course content has `unlock: { "afterHours": null }` (a delay in hours, or `null`). `learn` `player` marks each section `locked` (`{ reason: "completion", after }` or `{ reason: "time", opensAt }`) and each item `locked`; `lesson`, `savePosition`, `completeLesson`, `quiz` and `submitQuiz` answer 423 (`SECTION_LOCKED` / `COURSE_LOCKED`) for a locked item. `courses` `detail` returns `unlock`.
 
 **Body A: `updateMeta`**
 

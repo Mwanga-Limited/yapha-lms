@@ -1,5 +1,6 @@
 import { currentTenant, settingsOf } from './tenant.js';
 import { z } from 'zod';
+import { unlockSchema } from './unlock.js';
 
 /*
  * Course content stored per version (JSONB):
@@ -47,9 +48,10 @@ const section = z.object({ id: itemId, title: text(200), items: z.array(z.discri
 export const contentSchema = z.object({
   sections: z.array(section).max(100).default([]),
   completion: z.object({ lessons: z.array(itemId).default([]), quizzes: z.array(itemId).default([]) }).default({ lessons: [], quizzes: [] }),
+  unlock: unlockSchema,   // optional time-based unlocking (sections always unlock in order: see lib/unlock.js)
 });
 
-export const emptyContent = () => ({ sections: [], completion: { lessons: [], quizzes: [] } });
+export const emptyContent = () => ({ sections: [], completion: { lessons: [], quizzes: [] }, unlock: { afterHours: null } });
 
 export const flatItems = (content) => (content?.sections ?? []).flatMap((s) => s.items.map((it) => ({ ...it, sectionId: s.id, sectionTitle: s.title })));
 export const lessonsOf = (c) => flatItems(c).filter((i) => i.kind === 'lesson');
