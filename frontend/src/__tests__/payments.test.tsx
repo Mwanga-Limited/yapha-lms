@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { ToastProvider } from '../ui';
-import { formatMoney } from '../money';
+import { formatMoney, priceInput, priceLabel, priceProblem } from '../money';
 
 const api = vi.fn();
 vi.mock('../api', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api')>()), api: (...a: unknown[]) => api(...a) }));
@@ -30,13 +30,28 @@ const wrap = (path: string, el: React.ReactNode, route: string) => render(
 beforeEach(() => { api.mockReset(); user = student; });
 
 describe('prices', () => {
-  test('are shown in naira on course cards; nothing is ever shown as free', () => {
+  test('are shown in naira on course cards; a course without a price is shown as Free', () => {
     expect(formatMoney(500_000, 'NGN')).toBe('₦5,000');
     expect(formatMoney(1_250_050, 'NGN')).toBe('₦12,500.5');
     expect(formatMoney(0, 'NGN', { unset: 'Not set' })).toBe('Not set');
-    render(<MemoryRouter><CourseCard c={{ ...course(500_000), teacherName: 'Tunde', status: 'published' } as never} /></MemoryRouter>);
+    expect(priceLabel(0, 'NGN')).toBe('Free');
+    const { unmount } = render(<MemoryRouter><CourseCard c={{ ...course(500_000), teacherName: 'Tunde', status: 'published' } as never} /></MemoryRouter>);
     expect(screen.getByText('₦5,000')).toBeInTheDocument();
     expect(screen.queryByText(/free/i)).toBeNull();
+    unmount();
+    render(<MemoryRouter><CourseCard c={{ ...course(0), teacherName: 'Tunde', status: 'published' } as never} /></MemoryRouter>);
+    expect(screen.getByText('Free')).toBeInTheDocument();
+  });
+
+  test('are optional in forms: empty means free, otherwise at least ₦1,000', () => {
+    expect(priceProblem('')).toBeNull();
+    expect(priceInput('')).toBe(0);
+    expect(priceProblem('1000')).toBeNull();
+    expect(priceProblem('25000')).toBeNull();
+    expect(priceProblem('999')).toBe('The minimum price is ₦1,000. Leave it empty for a free course.');
+    expect(priceProblem('1')).toMatch(/minimum price/);
+    expect(priceProblem('-5')).toMatch(/Enter an amount/);
+    expect(priceInput('15000')).toBe(15000);
   });
 });
 
@@ -60,13 +75,27 @@ describe('buying a course from its page', () => {
     vi.unstubAllGlobals();
   });
 
-  test('every course is paid: a course without a price has no Enrol button and nothing is free', async () => {
-    api.mockImplementation(async () => detail(0));
+  test('a free course is joined straight away with "Enrol for free", without Paystack', async () => {
+    api.mockImplementation(async (_e: string, action: string) => {
+      if (action === 'detail') return detail(0);
+      if (action === 'enrol') return { ok: true, enrolled: true };
+      throw new Error(action);
+    });
     wrap('/courses/paid-accounting', <CourseDetail />, '/courses/:courseRef');
-    expect(await screen.findByText(/doesn't have a price/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Enrol/ })).toBeNull();
-    expect(screen.queryByText(/free/i)).toBeNull();
-    expect(api).not.toHaveBeenCalledWith('learn', 'enrol', expect.anything());
+    const join = await screen.findByRole('button', { name: 'Enrol for free' });
+    expect(screen.getByTestId('price')).toHaveTextContent('Free');
+    expect(screen.queryByText('One-time payment')).toBeNull();
+    await act(async () => { fireEvent.click(join); });
+    expect(api).toHaveBeenCalledWith('learn', 'enrol', { courseId: 'c1' });
+    expect(api).not.toHaveBeenCalledWith('payments', 'checkout', expect.anything());
+    expect(await screen.findByText('player')).toBeInTheDocument();
+  });
+
+  test('a free course can be joined even when the organisation has not set up Paystack', async () => {
+    api.mockImplementation(async () => detail(0, { paymentsReady: false }));
+    wrap('/courses/paid-accounting', <CourseDetail />, '/courses/:courseRef');
+    expect(await screen.findByRole('button', { name: 'Enrol for free' })).toBeEnabled();
+    expect(screen.queryByText(/payments are not set up/)).toBeNull();
   });
 
   test('when the organisation has not set up Paystack, buying is disabled with an explanation', async () => {

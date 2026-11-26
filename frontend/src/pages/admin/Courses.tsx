@@ -1,4 +1,4 @@
-import { formatMoney } from '../../money';
+import { priceLabel } from '../../money';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type CourseMeta } from '../../api';
@@ -38,7 +38,7 @@ export function AdminCourses() {
                   <td><Link to={`/admin/courses/${c.id}`}><strong>{c.title}</strong></Link></td>
                   <td>{c.teacherName}</td>
                   <td><StatusBadge status={c.status} />{c.revisionStatus && c.status !== 'draft' && c.status !== 'in_review' && c.status !== 'rejected' && <div className="small muted">revision {c.revisionStatus.replace('_', ' ')}</div>}</td>
-                  <td>{c.price > 0 ? formatMoney(c.price, c.currency) : <span className="warn-text">Not set</span>}</td>
+                  <td>{priceLabel(c.price, c.currency)}</td>
                   <td>{c.learners}</td>
                   <td>{fmtDate(c.updatedAt)}</td>
                 </tr>

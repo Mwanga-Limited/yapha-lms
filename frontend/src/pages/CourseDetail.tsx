@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, type CourseMeta, type LessonPayload, type OutlineSection } from '../api';
 import { useAuth } from '../auth';
 import { LessonView } from '../components/LessonView';
-import { formatMoney } from '../money';
+import { priceLabel } from '../money';
 import { forgetReferral, rememberedReferral } from '../referral';
 import { Alert, Button, ErrorState, Loading, Modal, StatusBadge, levelLabel, plural, useAction, useDocumentTitle, useLoad } from '../ui';
 
@@ -35,18 +35,26 @@ export function CourseDetail() {
   if (!data) return null;
   const { course, outline, teacher, viewer, paymentsReady } = data;
   const id = course.id;
-  const priced = course.price > 0;   // every course is paid; 0 = the Admin hasn't set a price yet
-  const price = formatMoney(course.price, course.currency);
+  const priced = course.price > 0;   // 0 = a free course
+  const price = priceLabel(course.price, course.currency);
   const lessons = outline.flatMap((s) => s.items).filter((i) => i.kind === 'lesson').length;
   const quizzes = outline.flatMap((s) => s.items).filter((i) => i.kind === 'quiz').length;
 
   const enrol = async () => {
     if (!user) { nav('/login', { state: { from: `/courses/${course.slug}` } }); return; }
-    // Every course is paid: go to Paystack's secure checkout; Paystack brings the learner back to /payment.
-    const r = await run(() => api<{ authorizationUrl: string }>('payments', 'checkout', { courseId: id, referralCode: referralCode.trim() || undefined }));
+    const referral = referralCode.trim() || undefined;
+    if (!priced) {
+      // A free course: enrol straight away, then open the course.
+      const r = await run(() => api('learn', 'enrol', { courseId: id, referralCode: referral }));
+      if (r) { forgetReferral(); nav(`/learn/${course.slug}`); }
+      return;
+    }
+    // A paid course: go to Paystack's secure checkout; Paystack brings the learner back to /payment.
+    const r = await run(() => api<{ authorizationUrl: string }>('payments', 'checkout', { courseId: id, referralCode: referral }));
     if (r) { forgetReferral(); window.location.assign(r.authorizationUrl); }
   };
-  const canBuy = priced && paymentsReady;
+  const canBuy = !priced || paymentsReady;   // can enrol: free, or the organisation takes payments
+  const enrolLabel = priced ? `Enrol for ${price}` : 'Enrol for free';
   const openPreview = (lessonId: string) => run(async () => {
     const r = await api<{ lesson: LessonPayload }>('courses', 'preview', { courseId: id, lessonId });
     setPreview(r.lesson);
@@ -71,7 +79,7 @@ export function CourseDetail() {
               <Link className="btn btn-primary btn-lg" to={`/learn/${course.slug}`}>{viewer.completed ? 'Review the course' : 'Continue learning'}</Link>
             ) : course.status === 'published' && !viewer.canManage && (!user || user.role === 'student') ? (
               <div className="buy">
-                {priced && <p className="detail-price" data-testid="price">{price}</p>}
+                <p className="detail-price" data-testid="price">{price}</p>
                 {canBuy && user && (
                   <div className="field referral-field">
                     <label htmlFor="referral-code">Referral code (optional)</label>
@@ -79,12 +87,10 @@ export function CourseDetail() {
                       placeholder="e.g. PY8EFB2Q" onChange={(e) => setReferralCode(e.target.value.toUpperCase())} />
                   </div>
                 )}
-                {priced && (
-                  <Button className="btn-lg" busy={busy} onClick={enrol} disabled={(!!user && !user.emailVerified) || !canBuy}>
-                    Enrol for {price}
-                  </Button>
-                )}
-                {canBuy && <p className="muted small buy-note">One-time payment</p>}
+                <Button className="btn-lg" busy={busy} onClick={enrol} disabled={(!!user && !user.emailVerified) || !canBuy}>
+                  {enrolLabel}
+                </Button>
+                {priced && canBuy && <p className="muted small buy-note">One-time payment</p>}
               </div>
             ) : null}
             {viewer.canManage && <Link className="btn btn-secondary" to={user?.id === course.teacherId ? `/teach/courses/${id}` : `/admin/courses/${id}`}>Manage course</Link>}
@@ -92,11 +98,9 @@ export function CourseDetail() {
           {user && user.role !== 'student' && !viewer.canManage && <p className="muted">Courses and certificates are for student accounts. You are signed in as {user.role === 'admin' ? 'an Admin' : 'a Teacher'}.</p>}
           {user && user.role === 'student' && !user.emailVerified && !viewer.enrolled && <Alert tone="warn">Verify your email to enrol. We sent you a link when you signed up.</Alert>}
           {!canBuy && !viewer.enrolled && course.status === 'published' && !viewer.canManage && (
-            <Alert tone="warn">{priced
-              ? "Enrolment isn't open yet: payments are not set up for this organisation. Please contact your administrator."
-              : "Enrolment isn't open yet: this course doesn't have a price. Please check back soon."}</Alert>
+            <Alert tone="warn">Enrolment isn't open yet: payments are not set up for this organisation. Please contact your administrator.</Alert>
           )}
-          {viewer.canManage && <p className="muted small">Price: <strong>{priced ? price : 'not set yet (learners cannot enrol)'}</strong>{user?.role === 'admin' ? '' : ' (set by the Admin)'}</p>}
+          {viewer.canManage && <p className="muted small">Price: <strong>{price}</strong>{user?.role === 'admin' ? '' : ' (set by the Admin)'}</p>}
         </div>
       </section>
 
@@ -149,7 +153,7 @@ export function CourseDetail() {
 
       <Modal title={preview?.title ?? 'Preview'} open={!!preview} onClose={() => setPreview(null)} wide>
         {preview && <LessonView lesson={preview} />}
-        <div className="row-end">{canBuy && <Button onClick={() => { setPreview(null); void enrol(); }}>Enrol for {price} to see every lesson</Button>}</div>
+        <div className="row-end">{canBuy && <Button onClick={() => { setPreview(null); void enrol(); }}>{enrolLabel} to see every lesson</Button>}</div>
       </Modal>
     </div>
   );

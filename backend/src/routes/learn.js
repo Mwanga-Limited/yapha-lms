@@ -9,6 +9,7 @@ import { fail, notFound } from '../lib/errors.js';
 import { activeEnrollment, checkCompletion, learnerState, loadCourseWithLive } from '../lib/learning.js';
 import { emails } from '../lib/mailer.js';
 import { notify } from '../lib/notify.js';
+import { findReferrer } from '../lib/referrals.js';
 import { courseMeta, courseRef, lessonPayload } from './courses.js';
 
 const itemRef = z.string().trim().min(1).max(64);
@@ -65,13 +66,14 @@ async function markLessonComplete(db, ctx, course, enrollment, lesson) {
 
 export const learnRoutes = actionEndpoint({
   /**
-   * EN-01 (one active enrolment) + EN-03 (verified email). Every course is paid, so this only reports whether the
-   * learner already has access; enrolment happens when the payment succeeds (payments checkout → verify / webhook).
+   * EN-01 (one active enrolment) + EN-03 (verified email). A free course (price 0) enrols the learner here.
+   * A paid course enrols them when the payment succeeds (payments checkout → verify / webhook).
    */
   enrol: {
     auth: 'user',
     verified: true,
-    schema: z.object({ courseId: id }),
+    // referralCode: optional, someone's referral code entered when enrolling (or filled in from their referral link).
+    schema: z.object({ courseId: id, referralCode: z.string().trim().max(40).optional() }),
     run: async (ctx) => tx(async (db) => {
       // Only Students enrol, so only Students can ever earn a certificate.
       if (ctx.user.role !== 'student') fail(403, 'Only student accounts can enrol in courses. Teachers and Admins can open courses they manage from the course editor.', { code: 'STUDENTS_ONLY' });
@@ -79,11 +81,22 @@ export const learnRoutes = actionEndpoint({
       if (!c) notFound('Course');
       if (c.status !== 'published') fail(409, 'This course is not open for enrolment');
       if (c.teacher_id === ctx.user.id) fail(409, 'You teach this course');
-      // Every course is paid: the enrolment is created when Paystack confirms the payment (see payments.js).
       const { rows: [e] } = await db.query(`SELECT 1 FROM enrollments WHERE user_id = $1 AND course_id = $2 AND status = 'active'`, [ctx.user.id, c.id]);
       if (e) return { ok: true, alreadyEnrolled: true };
-      if (c.price_minor <= 0) fail(409, 'This course is not available yet: it has no price', { code: 'NOT_PRICED' });
-      fail(402, 'Pay for this course to get access', { code: 'PAYMENT_REQUIRED' });
+      // A paid course: the enrolment is created when Paystack confirms the payment (see payments.js).
+      if (c.price_minor > 0) fail(402, 'Pay for this course to get access', { code: 'PAYMENT_REQUIRED' });
+
+      // A free course: enrol now.
+      const referrer = await findReferrer(db, ctx.data.referralCode, ctx.user.id);
+      const { rows: [created] } = await db.query(
+        `INSERT INTO enrollments (user_id, course_id, referred_by) VALUES ($1,$2,$3)
+         ON CONFLICT (user_id, course_id) WHERE status = 'active' DO NOTHING RETURNING *`, [ctx.user.id, c.id, referrer?.id ?? null]);
+      if (!created) return { ok: true, alreadyEnrolled: true };   // a second click raced the first
+      await audit(db, ctx, { action: 'enrollment.create', targetType: 'enrollment', targetId: created.id,
+        newValues: { courseId: c.id, course: c.title, free: true, referredBy: referrer?.id ?? null } });
+      await notify(db, ctx.user.id, { type: 'enrollment', title: `Enrolled: ${c.title}`, body: 'You now have full access to this free course.', link: `/learn/${c.slug}` });
+      ctx.after(() => emails.enrolled(ctx.user, c));
+      return { ok: true, enrolled: true };
     }),
   },
 

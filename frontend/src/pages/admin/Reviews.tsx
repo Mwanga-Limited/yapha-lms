@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { api, type CourseMeta } from '../../api';
 import { Empty, Loading, fmtDateTime, plural, useDocumentTitle, useLoad } from '../../ui';
 import { AdminNav } from './Dashboard';
-import { formatMoney } from '../../money';
+import { priceLabel } from '../../money';
 
 interface QueueItem { versionId: string; versionNo: number; submittedAt: string; isRevision: boolean; course: CourseMeta; teacherName: string; teacherEmail: string; rejections: number; lessonCount: number; quizCount: number }
 
@@ -27,7 +27,7 @@ export function AdminReviews() {
                 {q.isRevision ? <span className="badge badge-in_review">Revision of a live course</span> : <span className="badge badge-draft">New course</span>}
                 {q.rejections > 0 && <span className="badge badge-rejected">{plural(q.rejections, 'earlier rejection')}</span>}
                 <span className="muted small">{plural(q.lessonCount, 'lesson')}, {plural(q.quizCount, 'quiz')}</span>
-                {!q.isRevision && <span className="muted small">Suggested price: {formatMoney(q.course.suggestedPrice, q.course.currency, { unset: 'none' })}</span>}
+                {!q.isRevision && <span className="muted small">Suggested price: {priceLabel(q.course.suggestedPrice, q.course.currency)}</span>}
               </div>
             </Link>
           </li>

@@ -3,6 +3,8 @@
 All notable changes to Yapha LMS. Format based on [Keep a Changelog](https://keepachangelog.com/); versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
+### Changed
+- Course pricing is optional. A course without a price is free and learners enrol straight away ("Enrol for free"), with or without a referral code. A price, when set, must be at least ₦1,000 (Admin price, approval price and the teacher's suggestion). Approving changes to a free course keeps it free.
 
 ## [0.9.1] - 2026-11-10
 ### Changed

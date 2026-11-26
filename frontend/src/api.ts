@@ -55,7 +55,7 @@ export interface CourseMeta {
   id: string; slug: string; title: string; summary: string; description: string; outline: string; category: string; level: Level;
   language: string; thumbnailFileId: string | null; thumbnailUrl: string | null; status: CourseStatus;
   publishedAt: string | null; createdAt: string; updatedAt: string; teacherId: string;
-  /** In the smallest unit (kobo…). price is what learners pay (set by the Admin; every course is paid, 0 = not priced yet); suggestedPrice is the teacher's suggestion. */
+  /** In the smallest unit (kobo…). price is what learners pay (set by the Admin; 0 = free); suggestedPrice is the teacher's suggestion. */
   price: number; suggestedPrice: number; currency: Currency;
 }
 
