@@ -784,3 +784,18 @@ fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; }
 .course-referrals { margin: 0 0 18px; }
 .course-referrals h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 8px; font-size: 1rem; }
 .referees-table { padding: 4px 0; }
+
+/* Course unlocking: the delay setting, and locked sections in the course player */
+.unlock-bar { flex-direction: column; align-items: flex-start; gap: 8px; }
+.unlock-field { display: grid; gap: 6px; }
+.unlock-field legend { font-weight: 700; margin-bottom: 4px; }
+.radio-row { display: flex; align-items: center; gap: 8px; font-weight: 400; cursor: pointer; }
+.radio-row input { width: auto; }
+.unlock-delay { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-left: 24px; }
+.unlock-delay input { width: 90px; }
+.unlock-delay select { width: auto; }
+.side-section-lock { display: block; font-weight: 400; font-size: var(--step--1); color: var(--ink-3); margin-top: 2px; }
+.side-item.locked { color: var(--ink-3); }
+.side-item.locked .side-check { opacity: .8; }
+.locked-panel { text-align: center; padding: 40px 16px; }
+.locked-panel .lock-icon { font-size: 2rem; display: block; margin-bottom: 8px; }

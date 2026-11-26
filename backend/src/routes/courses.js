@@ -12,6 +12,7 @@ import { notify, notifyAdmins } from '../lib/notify.js';
 import { signedFileUrl } from '../lib/security.js';
 import { learnerState } from '../lib/learning.js';
 import { paymentAccount } from '../lib/payments.js';
+import { unlockOf, unlockSchema } from '../lib/unlock.js';
 
 const PAGE_SIZE = 12;
 const fileUrl = (fid) => (fid ? `${apiBase()}/files/${fid}` : null);
@@ -140,6 +141,7 @@ export const courseRoutes = actionEndpoint({
         outline: c.live_content ? outlineOf(c.live_content) : [],
         teacher: { id: c.teacher_id, name: c.t_name, bio: c.t_bio, expertise: c.t_expertise, photoUrl: fileUrl(c.t_photo), courses: c.t_courses },
         viewer: { enrolled: !!enrollment, completed: !!enrollment?.completed_at, canManage: !!canManage, signedIn: !!user, emailVerified: !!user?.email_verified_at },
+        unlock: unlockOf(c.live_content),   // sections open in order; afterHours: the course opens this long after enrolling
         // Can learners pay here? (the organisation has connected Paystack)
         paymentsReady: !!(await paymentAccount({ query }))?.secretKey,
       };
@@ -334,6 +336,34 @@ export const courseRoutes = actionEndpoint({
       await notify(db, c.teacher_id, { type: 'course', title: `Price updated: ${c.title}`,
         body: `Learners now pay ${formatMoney(price, currency)}.`, link: `/teach/courses/${c.id}` });
       return { course: courseMeta(u) };
+    }),
+  },
+
+  /**
+   * The Admin sets the course's time-based unlocking directly (afterHours: null = no delay). It applies to the live course
+   * straight away, and to the course's revision too so approving that later doesn't undo it. A teacher proposes a delay in the
+   * course content instead, which takes effect when an Admin approves it.
+   */
+  setUnlock: {
+    auth: ['admin'],
+    schema: z.object({ id, unlock: unlockSchema }),
+    run: async (ctx) => tx(async (db) => {
+      const { rows: [c] } = await db.query(`SELECT * FROM courses WHERE id = $1 FOR UPDATE`, [ctx.data.id]);
+      if (!c) notFound('Course');
+      if (c.status === 'archived') fail(409, 'Archived courses cannot be changed');
+      const ids = [c.live_version_id, c.draft_version_id].filter(Boolean);
+      const { rows: versions } = await db.query(`SELECT id, content FROM course_versions WHERE id = ANY($1) FOR UPDATE`, [ids]);
+      const current = unlockOf(versions.find((v) => v.id === (c.live_version_id ?? c.draft_version_id))?.content);
+      const next = ctx.data.unlock;
+      if (current.afterHours === next.afterHours) return { unlock: current };
+      for (const v of versions) {
+        await db.query(`UPDATE course_versions SET content = jsonb_set(content, '{unlock}', $2::jsonb), updated_at = now() WHERE id = $1`, [v.id, JSON.stringify(next)]);
+      }
+      await db.query(`UPDATE courses SET updated_at = now() WHERE id = $1`, [c.id]);
+      await audit(db, ctx, { action: 'course.unlock_set', targetType: 'course', targetId: c.id, oldValues: current, newValues: next });
+      const say = next.afterHours ? `The course now opens ${next.afterHours % 24 === 0 ? `${next.afterHours / 24} day(s)` : `${next.afterHours} hour(s)`} after a learner enrols.` : 'The course now opens as soon as a learner enrols.';
+      await notify(db, c.teacher_id, { type: 'course', title: `Unlocking changed: ${c.title}`, body: say, link: `/teach/courses/${c.id}` });
+      return { unlock: next };
     }),
   },
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { newId, upload, type Content, type Item, type LessonItem, type LessonType, type Question, type QuizItem } from '../../api';
 import { useTenant } from '../../auth';
 import { Button, Field, Select, TextArea, useAction } from '../../ui';
+import { UnlockDelayField } from '../../components/UnlockSetting';
 
 type Mutate = (fn: (c: Content) => void) => void;
 
@@ -177,6 +178,11 @@ export function ContentBuilder({ value, onChange }: { value: Content; onChange: 
           c.completion.lessons = all.filter((i) => i.kind === 'lesson').map((i) => i.id);
           c.completion.quizzes = all.filter((i) => i.kind === 'quiz').map((i) => i.id);
         })}>Require everything</button>}
+      </div>
+      <div className="rule-bar unlock-bar">
+        <span><strong>Unlocking:</strong> sections open in order. A learner opens the next section after completing every lesson and passing every quiz in the one before it.</span>
+        <UnlockDelayField value={value.unlock?.afterHours ?? null} onChange={(afterHours) => mutate((c) => { c.unlock = { afterHours }; })} />
+        <small className="hint">A change here takes effect when an Admin approves the course.</small>
       </div>
       {value.sections.map((s, si) => (
         <section key={s.id} className="section-edit">

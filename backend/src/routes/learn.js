@@ -9,6 +9,7 @@ import { fail, notFound } from '../lib/errors.js';
 import { activeEnrollment, checkCompletion, learnerState, loadCourseWithLive } from '../lib/learning.js';
 import { emails } from '../lib/mailer.js';
 import { notify } from '../lib/notify.js';
+import { requireUnlocked, sectionAccess, unlockOf } from '../lib/unlock.js';
 import { courseMeta, courseRef, lessonPayload } from './courses.js';
 
 const itemRef = z.string().trim().min(1).max(64);
@@ -95,20 +96,26 @@ export const learnRoutes = actionEndpoint({
       const db = { query };
       const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId);
       const st = await learnerState(db, enrollment.id);
-      const outline = outlineOf(course.live_content).map((s) => ({
+      const access = sectionAccess(course.live_content, enrollment, st);
+      const outline = outlineOf(course.live_content).map((s, i) => ({
         ...s,
+        // locked: why the learner can't open this section yet ({ reason: 'time', opensAt } or { reason: 'completion', after })
+        locked: access[i].open ? null : { reason: access[i].reason, opensAt: access[i].opensAt ?? null, after: access[i].after ?? null },
         items: s.items.map((it) => ({
           ...it,
           done: it.kind === 'lesson' ? st.completed.has(it.id) : st.passed.has(it.id),
+          locked: !access[i].open && !(it.kind === 'lesson' && it.preview),
           ...(it.kind === 'quiz' ? { state: quizStateView(st.quizStates[it.id]) } : {}),
         })),
       }));
+      const openIds = new Set(outline.flatMap((s) => s.items).filter((it) => !it.locked).map((it) => it.id));
       const { rows: [cert] } = await query(`SELECT code, issued_at, revoked_at, revoke_reason FROM certificates WHERE enrollment_id = $1`, [enrollment.id]);
       return {
         course: { ...courseMeta(course), teacherName: course.teacher_name },
         outline,
         progress: computeProgress(course.live_content, st.completed, st.passed),
-        resumeItemId: enrollment.last_item_id && findItem(course.live_content, enrollment.last_item_id) ? enrollment.last_item_id : null,
+        unlock: { ...unlockOf(course.live_content), enrolledAt: enrollment.enrolled_at },
+        resumeItemId: enrollment.last_item_id && openIds.has(enrollment.last_item_id) ? enrollment.last_item_id : null,
         completedAt: enrollment.completed_at,
         certificate: cert ? { code: cert.code, issuedAt: cert.issued_at, revoked: !!cert.revoked_at, revokeReason: cert.revoke_reason } : null,
       };
@@ -123,6 +130,7 @@ export const learnRoutes = actionEndpoint({
       const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId);
       const lesson = findItem(course.live_content, ctx.data.lessonId, 'lesson');
       if (!lesson) notFound('Lesson');
+      requireUnlocked(course.live_content, enrollment, await learnerState(db, enrollment.id), lesson.id);
       await touch(db, enrollment.id, lesson.id);
       const { rows: [p] } = await query(
         `SELECT completed_at, position_sec, watched_sec, duration_sec FROM lesson_progress WHERE enrollment_id = $1 AND lesson_id = $2`, [enrollment.id, lesson.id]);
@@ -148,6 +156,7 @@ export const learnRoutes = actionEndpoint({
       const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId, true);
       const lesson = findItem(course.live_content, ctx.data.lessonId, 'lesson');
       if (!lesson) notFound('Lesson');
+      requireUnlocked(course.live_content, enrollment, await learnerState(db, enrollment.id), lesson.id);
       const { rows: [prev] } = await db.query(
         `SELECT *, extract(epoch FROM now() - last_report_at)::float8 AS elapsed FROM lesson_progress
           WHERE enrollment_id = $1 AND lesson_id = $2 FOR UPDATE`, [enrollment.id, lesson.id]);
@@ -184,6 +193,7 @@ export const learnRoutes = actionEndpoint({
       const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId, true);
       const lesson = findItem(course.live_content, ctx.data.lessonId, 'lesson');
       if (!lesson) notFound('Lesson');
+      requireUnlocked(course.live_content, enrollment, await learnerState(db, enrollment.id), lesson.id);
       if (lesson.type === 'video') {
         // Videos can't be ticked off by hand: only watching them completes them.
         const { rows: [p] } = await db.query(`SELECT * FROM lesson_progress WHERE enrollment_id = $1 AND lesson_id = $2`, [enrollment.id, lesson.id]);
@@ -203,6 +213,7 @@ export const learnRoutes = actionEndpoint({
       const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId);
       const quiz = findItem(course.live_content, ctx.data.quizId, 'quiz');
       if (!quiz) notFound('Quiz');
+      requireUnlocked(course.live_content, enrollment, await learnerState(db, enrollment.id), quiz.id);
       await touch(db, enrollment.id, quiz.id);
       const [{ rows: [s] }, { rows: attempts }] = await Promise.all([
         query(`SELECT * FROM quiz_states WHERE enrollment_id = $1 AND quiz_id = $2`, [enrollment.id, quiz.id]),
@@ -220,6 +231,7 @@ export const learnRoutes = actionEndpoint({
       const { course, enrollment } = await requireEnrollment(db, ctx, ctx.data.courseId, true);
       const quiz = findItem(course.live_content, ctx.data.quizId, 'quiz');
       if (!quiz) notFound('Quiz');
+      requireUnlocked(course.live_content, enrollment, await learnerState(db, enrollment.id), quiz.id);
       await db.query(`INSERT INTO quiz_states (enrollment_id, quiz_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [enrollment.id, quiz.id]);
       const { rows: [s] } = await db.query(`SELECT * FROM quiz_states WHERE enrollment_id = $1 AND quiz_id = $2 FOR UPDATE`, [enrollment.id, quiz.id]);
       if (s.passed_at) fail(409, 'You have already passed this quiz');

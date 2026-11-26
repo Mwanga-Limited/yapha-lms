@@ -243,6 +243,13 @@ Build the `Dockerfile`, copy `deploy/.env.production.example` to `deploy/.env.pr
 - **Teachers and students** see their totals (enrolments and courses) and, per course, each learner's name, date and email with most of it hidden (`b***@example.com`).
 - **Admins** see **Admin › Referrals**: every member whose code was used, with the same totals and, per course, each learner's **full** email, name and date.
 
+## Course unlocking
+
+- **Sections open in order, in every course.** Section 1 is open when a learner enrols. Each later section opens when every lesson in the section before it is complete (under its own rules: a video must be watched) and every quiz in it is passed. Free preview lessons are always open.
+- **Optional delay (time-based unlocking).** A course can open a set number of hours or days after each learner enrols, e.g. 48 hours. Until then every section is locked (preview lessons stay open); after that, sections open in order as above.
+- **Who sets the delay:** the teacher, on **Lessons & quizzes › Unlocking**; it takes effect when an Admin approves the course or revision. An Admin can also set it directly on **Admin › All courses › course › Unlocking**; that applies straight away and is audited (`course.unlock_set`).
+- **Enforced by the server:** a locked lesson or quiz can't be opened, watched, completed or attempted (423 `SECTION_LOCKED` / `COURSE_LOCKED`). The player shows a lock and why: “Complete “Basics” first” or the date and time the course opens. Progress learners already had is kept.
+
 ## Course web addresses
 
 Courses have a readable address made from the title, e.g. `/yapha/courses/bookkeeping-for-small-businesses` and `/yapha/learn/bookkeeping-for-small-businesses`, instead of an ID. If two courses have the same title, the second gets `-2`. The address follows the title until the course is first published; after that it never changes, so shared links keep working. Old links with the course ID still work and move to the readable address.
