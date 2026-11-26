@@ -144,6 +144,13 @@ describe('Google sign-in popup', () => {
   });
 });
 
+describe('Embedded videos', () => {
+  test('the referrer policy sends YouTube the site origin, which its player requires (Error 153)', async () => {
+    const r = await request(app).get('/api/health');
+    assert.equal(r.headers['referrer-policy'], 'strict-origin-when-cross-origin');
+  });
+});
+
 describe('Observability', () => {
   test('every response carries a request id, and errors repeat it', async () => {
     const ok = await request(app).post(api('auth')).send({ action: 'me' });

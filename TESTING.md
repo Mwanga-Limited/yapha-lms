@@ -71,7 +71,7 @@ What runs in the backend:
   - rewinding, and playing faster than 2x, don't add watched time
   - watched time never exceeds the video's length; only enrolled students can report it
 - `test/files-totp.test.js` covers authenticator-app sign-in, uploads, signed private-file links, and teachers referencing files they don't own.
-- `test/hardening.test.js` covers the pre-deployment fixes: the sign-in rate limit (page-load reads are not counted; organisations do not share a counter), Google sign-in not taking over an unverified account, uploads refused before the body is read (no session, size caps, storage quota), the invitation limits, `javascript:` links refused, request IDs, health and metrics, production configuration checks, and concurrent migrations.
+- `test/hardening.test.js` covers the pre-deployment fixes: the sign-in rate limit (page-load reads are not counted; organisations do not share a counter), Google sign-in not taking over an unverified account, uploads refused before the body is read (no session, size caps, storage quota), the invitation limits, `javascript:` links refused, request IDs, the referrer policy embedded YouTube videos need, health and metrics, production configuration checks, and concurrent migrations.
 - The tests ignore `APP_DB_USER` from `backend/.env` (they set it empty), so a developer's runtime role cannot break them.
 - `test/tenancy.test.js` covers multitenancy:
   - **Member IDs.** Unique organisation and member IDs, which never change.
