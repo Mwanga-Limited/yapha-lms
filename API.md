@@ -310,7 +310,7 @@ Then sign in as Dami at `POST /api/delta/auth` `login` (two steps, like any Admi
 | `account` | Admin | none | `connected`, the public key, a hint of the secret key (`sk_test_…bbbb`, never the key itself), `currency`, `webhookUrl` |
 | `saveAccount` | Admin | `{ "publicKey": "pk_test_…", "secretKey": "sk_test_…" }` | 200. Wrong format, or one test and one live key → 400 |
 | `removeAccount` | Admin | none | 200 |
-| `checkout` | Student (verified email) | `{ "courseId": "<id>" }` | `{ authorizationUrl, reference }`: send the learner to `authorizationUrl` (Paystack). Course without a price → 409 `NOT_PRICED`; already has access → 409 `ALREADY_ENROLLED`; Paystack not set up → 409 `PAYMENTS_NOT_SET_UP` |
+| `checkout` | Student (verified email) | `{ "courseId": "<id>" }` | `{ authorizationUrl, reference }`: send the learner to `authorizationUrl` (Paystack). Free course → 409 `FREE_COURSE` (use `learn` `enrol`); already has access → 409 `ALREADY_ENROLLED`; Paystack not set up → 409 `PAYMENTS_NOT_SET_UP` |
 | `verify` | Student who started the payment | `{ "reference": "ACME-…" }` | `{ payment: { status: "success" \| "pending" \| "failed", … }, courseId }`. On success the learner is enrolled. Someone else's reference → 404 |
 | `mine` | Student | none | the learner's successful payments (receipts) |
 | `list` | Admin | `{ "status": "success" \| "pending" \| "failed" \| "", "page": 1 }` | payments with learner and course, plus totals |
@@ -318,11 +318,11 @@ Then sign in as Dami at `POST /api/delta/auth` `login` (two steps, like any Admi
 `POST /api/acme/payments/webhook` is called by **Paystack**, not by people: it must carry a valid `x-paystack-signature` (HMAC-SHA512 of the body with the organisation's secret key), otherwise 401. `charge.success` gives the learner access.
 
 Related changes:
-- **Every course is paid.** `learn` `enrol` no longer enrols: it returns `alreadyEnrolled: true` for a learner who paid, otherwise 402 `PAYMENT_REQUIRED` (pay with `payments` `checkout`), or 409 `NOT_PRICED` if the course has no price.
+- **Pricing is optional.** A course with price 0 is free: `learn` `enrol` (`{ courseId, referralCode? }`) enrols the learner straight away and returns `enrolled: true`. For a paid course it returns `alreadyEnrolled: true` for a learner who paid, otherwise 402 `PAYMENT_REQUIRED` (pay with `payments` `checkout`). A price, when set, must be 0 or at least 1,000 (`setPrice`, `approveCourse`, and the teacher's `suggestedPrice`); anything in between → 400.
 - `courses` `updateMeta` takes `suggestedPrice` (the teacher's suggestion, e.g. `15000` = ₦15,000). `submit` refuses a course with no suggested price.
 - `courses` `setPrice` (Admin): `{ "id": "<course id>", "price": 15000 }`. The price must be above 0.
-- `admin` `approveCourse` takes an optional `price`; it defaults to the current price, else the teacher's suggestion. No price → 400 `PRICE_REQUIRED`.
-- `courses` `publish` refuses a course with no price (409 `PRICE_REQUIRED`). The catalogue only lists priced courses.
+- `admin` `approveCourse` takes an optional `price` (0 = free). Without it, a new course takes the teacher's suggestion (none = free) and a revision keeps the current price.
+- `courses` `publish` needs no price. The catalogue lists free and paid courses (`price: 0` = free).
 - Courses now include `price`, `suggestedPrice` (both in kobo) and `currency`.
 
 ## 12. Referrals

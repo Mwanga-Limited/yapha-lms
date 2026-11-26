@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { CourseMeta } from '../api';
 import { levelLabel } from '../ui';
-import { formatMoney } from '../money';
+import { priceLabel } from '../money';
 
 /** The two-leaf shape used as decoration in the course page header. */
 export function Leaf({ className, color = 'currentColor' }: { className?: string; color?: string }) {
@@ -22,7 +22,7 @@ export function CourseCard({ c }: { c: CourseMeta & { teacherName: string; lesso
         <h3>{c.title}</h3>
         <p className="course-meta">{[levelLabel(c.level), lessons].filter(Boolean).join(' · ')}</p>
         <p className="course-teacher">by {c.teacherName}</p>
-        {c.price > 0 && <p className="course-price">{formatMoney(c.price, c.currency)}</p>}
+        <p className="course-price">{priceLabel(c.price, c.currency)}</p>
       </div>
     </Link>
   );

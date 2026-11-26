@@ -6,25 +6,27 @@ import { Learners } from '../../components/Learners';
 import { Alert, Button, ErrorState, Field, Loading, ReasonModal, StatusBadge, Tabs, TextArea, fmtDateTime, levelLabel, useAction, useDocumentTitle, useLoad, useToast } from '../../ui';
 import { CourseActions, type CourseGet } from '../teacher/CourseEditor';
 import { AdminNav } from './Dashboard';
-import { formatMoney, fromMinor } from '../../money';
+import { MIN_PRICE, formatMoney, fromMinor, priceInput, priceProblem } from '../../money';
 import type { CourseMeta } from '../../api';
 
-/** The Admin sets what learners pay, before or after publishing. Learners who already paid keep their access. */
+/** The Admin sets what learners pay (empty = free), before or after publishing. Learners who already have access keep it. */
 function PriceEditor({ c, reload }: { c: CourseMeta; reload: () => Promise<void> }) {
-  const [price, setPrice] = useState(c.price > 0 ? String(fromMinor(c.price)) : c.suggestedPrice > 0 ? String(fromMinor(c.suggestedPrice)) : '');
+  const [price, setPrice] = useState(c.price > 0 ? String(fromMinor(c.price)) : '');
   const { busy, run } = useAction();
-  const changed = Number(price) > 0 && Number(price) !== fromMinor(c.price);
+  const problem = priceProblem(price, c.currency);
+  const changed = priceInput(price) !== fromMinor(c.price);
   return (
     <section className="panel price-panel" data-testid="price-editor">
       <h2>Price</h2>
       <p className="muted small">
-        {c.price > 0 ? <>Learners pay <strong>{formatMoney(c.price, c.currency)}</strong>.</> : <strong className="warn-text">No price yet: learners can't enrol and the course can't be published.</strong>}
+        {c.price > 0 ? <>Learners pay <strong>{formatMoney(c.price, c.currency)}</strong>.</> : <>This course is <strong>free</strong>.</>}
         {' '}The teacher suggested {c.suggestedPrice > 0 ? formatMoney(c.suggestedPrice, c.currency) : 'no price'}.
-        {' '}Every course is paid. One payment gives full access; changing the price doesn't affect learners who already have access.
+        {' '}Leave the price empty for a free course; a price must be at least {formatMoney(MIN_PRICE * 100, c.currency)}. Changing it doesn't affect learners who already have access.
       </p>
-      <form className="row-gap" onSubmit={(e) => { e.preventDefault(); void run(async () => { await api('courses', 'setPrice', { id: c.id, price: Number(price) }); await reload(); }, 'Price saved'); }}>
-        <Field label={`Price (${c.currency})`} type="number" min={1} max={10000000} step="0.01" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} />
-        <Button type="submit" busy={busy} disabled={!changed || price === ''}>Save price</Button>
+      <form className="row-gap" onSubmit={(e) => { e.preventDefault(); void run(async () => { await api('courses', 'setPrice', { id: c.id, price: priceInput(price) }); await reload(); }, 'Price saved'); }}>
+        <Field label={`Price (${c.currency}, optional)`} type="number" min={0} max={10000000} step="0.01" inputMode="decimal" placeholder="Free"
+          value={price} onChange={(e) => setPrice(e.target.value)} error={problem ?? undefined} />
+        <Button type="submit" busy={busy} disabled={!changed || !!problem}>Save price</Button>
       </form>
     </section>
   );
@@ -48,7 +50,8 @@ export function AdminCourse() {
   const c = g.course;
   const inReview = g.draft?.status === 'in_review';
   const newInReview = inReview && !g.live;
-  const priceOnApproval = approvePrice ?? String(fromMinor(c.suggestedPrice));
+  const priceOnApproval = approvePrice ?? (c.suggestedPrice > 0 ? String(fromMinor(c.suggestedPrice)) : '');
+  const approvalPriceProblem = priceProblem(priceOnApproval, c.currency);
   const shown = inReview || (!g.live && g.draft) ? g.draft!.content : g.live?.content;
 
   return (
@@ -73,14 +76,14 @@ export function AdminCourse() {
           </div>
           <div className="decision-actions">
             {newInReview && (
-              <Field label={`Price learners pay (${c.currency})`} type="number" min={1} required max={10000000} step="0.01" inputMode="decimal"
-                value={priceOnApproval} onChange={(e) => setApprovePrice(e.target.value)}
-                hint={`The teacher suggested ${c.suggestedPrice > 0 ? formatMoney(c.suggestedPrice, c.currency) : 'no price'}. Every course is paid. You can change it later.`} />
+              <Field label={`Price learners pay (${c.currency}, optional)`} type="number" min={0} max={10000000} step="0.01" inputMode="decimal" placeholder="Free"
+                value={priceOnApproval} onChange={(e) => setApprovePrice(e.target.value)} error={approvalPriceProblem ?? undefined}
+                hint={`The teacher suggested ${c.suggestedPrice > 0 ? formatMoney(c.suggestedPrice, c.currency) : 'no price'}. Leave it empty for a free course. You can change it later.`} />
             )}
             <TextArea label="Note to the teacher (optional)" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
             <div className="row-gap">
-              <Button busy={busy} disabled={newInReview && !(Number(priceOnApproval) > 0)} onClick={() => run(async () => {
-                await api('admin', 'approveCourse', { versionId: g.draft!.id, note, ...(newInReview ? { price: Number(priceOnApproval) } : {}) });
+              <Button busy={busy} disabled={newInReview && !!approvalPriceProblem} onClick={() => run(async () => {
+                await api('admin', 'approveCourse', { versionId: g.draft!.id, note, ...(newInReview ? { price: priceInput(priceOnApproval) } : {}) });
                 await reload();
               }, 'Course approved')}>Approve</Button>
               <Button variant="danger" onClick={() => setRejecting(true)}>Reject with a reason</Button>

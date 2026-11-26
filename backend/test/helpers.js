@@ -34,7 +34,7 @@ const { startPaystackTestServer } = await import('./paystack-test-server.js');
 export { pool, outbox };
 export const { config } = await import('../src/config.js');
 
-// Every course is paid, so every test file talks to the Paystack test server (no internet, no real money).
+// Paid courses go through Paystack, so every test file talks to the Paystack test server (no internet, no real money).
 // Each test organisation starts with its own Paystack test keys connected.
 export const PAYSTACK_KEYS = {
   alpha: { publicKey: 'pk_test_' + 'a'.repeat(40), secretKey: 'sk_test_' + 'b'.repeat(40) },
@@ -187,7 +187,7 @@ export async function publishedCourse(teacher, admin, title, slug = TENANT) {
 export const auditCount = async (action, targetId) =>
   (await pool.query(`SELECT count(*)::int AS n FROM audit_logs WHERE action = $1 AND ($2::text IS NULL OR target_id = $2)`, [action, targetId ?? null])).rows[0].n;
 
-/** Every course is paid: a learner gets access by paying through the Paystack test server. Returns the verify response. */
+/** A learner gets access to a paid course by paying through the Paystack test server. Returns the verify response. */
 export async function buy(s, courseId, slug = TENANT) {
   const c = await callIn(slug, s.a ?? s, 'payments', 'checkout', { courseId });
   if (c.status !== 200) throw new Error(`checkout ${c.status}: ${JSON.stringify(c.body)}`);

@@ -133,7 +133,7 @@ describe('Course prices (teacher suggests, Admin sets)', () => {
     const id = await publishedCourse(teacher, root, 'Repriced Course');
     await call(teacher, 'courses', 'setPrice', { id, price: 1 }).expect(403);
     await call(root, 'courses', 'setPrice', { id, price: -5 }).expect(400);
-    await call(root, 'courses', 'setPrice', { id, price: 0 }).expect(400);   // every course is paid
+    await call(root, 'courses', 'setPrice', { id, price: 999 }).expect(400);   // below the ₦1,000 minimum
     const r = await call(root, 'courses', 'setPrice', { id, price: 20000 }).expect(200);
     assert.equal(r.body.course.price, 2_000_000);
     const cat = (await call(agent(), 'courses', 'catalog', { q: 'Repriced' })).body.courses[0];
@@ -261,33 +261,87 @@ describe('Paying for a course', () => {
     assert.ok(r.body.certificate?.code);
   });
 
-  test('every course is paid: no free courses can be submitted, approved, priced, published or joined', async () => {
-    // Submitting needs a suggested price.
+  test('pricing is optional: a course without a price can be submitted, published and joined for free', async () => {
+    // Submitting doesn't need a price.
     const { body: { id } } = await call(teacher, 'courses', 'create', { title: 'No Price Yet' }).expect(200);
     await call(teacher, 'courses', 'updateMeta', { id, title: 'No Price Yet', summary: 'x', category: 'Maths', outline: 'y', suggestedPrice: 0 }).expect(200);
     const { sampleContent } = await import('./helpers.js');
     await call(teacher, 'courses', 'saveContent', { id, content: sampleContent() }).expect(200);
-    const sub = await call(teacher, 'courses', 'submit', { id }).expect(422);
-    assert.ok(sub.body.problems.includes('Suggest a price (every course is paid)'));
-    // The Admin can't set a price of 0.
-    await call(root, 'courses', 'setPrice', { id: courseId, price: 0 }).expect(400);
+    await call(teacher, 'courses', 'submit', { id }).expect(200);
+    // Approved without a price: the course is free, and can be published.
+    const q = (await call(root, 'admin', 'reviewQueue')).body.queue.find((x) => x.course.id === id);
+    await call(root, 'admin', 'approveCourse', { versionId: q.versionId }).expect(200);
+    assert.equal((await call(root, 'courses', 'get', { id })).body.course.price, 0);
+    await call(teacher, 'courses', 'publish', { id }).expect(200);
 
-    // A course published before "every course is paid" (price 0): not publishable again, not joinable, not buyable.
-    const old = await publishedCourse(teacher, root, 'Old Free Course');
+    // A free course: in the catalogue and joined without paying.
+    const free = id;
+    const cat = (await call(agent(), 'courses', 'catalog', { q: 'No Price Yet' })).body;
+    assert.equal(cat.total, 1, 'a free course is in the catalogue');
+    assert.equal(cat.courses[0].price, 0);
     const s = await registerStudent('Free Learner');
-    await buy(s, old);   // a learner who joined before keeps access
-    await pool.query(`UPDATE courses SET price_minor = 0 WHERE id = $1`, [old]);
-    await call(s.a, 'learn', 'lesson', { courseId: old, lessonId: 'l1' }).expect(200);
-    const s2 = await registerStudent('Late Learner');
-    assert.equal((await call(s2.a, 'learn', 'enrol', { courseId: old }).expect(409)).body.code, 'NOT_PRICED');
-    assert.equal((await call(s2.a, 'payments', 'checkout', { courseId: old }).expect(409)).body.code, 'NOT_PRICED');
-    const cat = (await call(agent(), 'courses', 'catalog', { q: 'Old Free Course' })).body;
-    assert.equal(cat.total, 0, 'a course without a price is not in the catalogue');
-    await call(teacher, 'courses', 'unpublish', { id: old }).expect(200);
-    assert.equal((await call(teacher, 'courses', 'publish', { id: old }).expect(409)).body.code, 'PRICE_REQUIRED');
-    await call(root, 'courses', 'setPrice', { id: old, price: 2500 }).expect(200);
-    await call(teacher, 'courses', 'publish', { id: old }).expect(200);
-    await buy(s2, old);
+    await call(s.a, 'learn', 'lesson', { courseId: free, lessonId: 'l1' }).expect(403);
+    assert.equal((await call(s.a, 'payments', 'checkout', { courseId: free }).expect(409)).body.code, 'FREE_COURSE');
+    const r = await call(s.a, 'learn', 'enrol', { courseId: free }).expect(200);
+    assert.equal(r.body.enrolled, true);
+    await call(s.a, 'learn', 'lesson', { courseId: free, lessonId: 'l1' }).expect(200);
+    assert.equal((await call(s.a, 'learn', 'enrol', { courseId: free }).expect(200)).body.alreadyEnrolled, true, 'enrolling twice is harmless');
+    const { rows } = await pool.query(`SELECT count(*)::int AS n FROM enrollments WHERE course_id = $1 AND status = 'active'`, [free]);
+    assert.equal(rows[0].n, 1);
+    const { rows: [a] } = await pool.query(`SELECT count(*)::int AS n FROM audit_logs WHERE action = 'enrollment.create' AND new_values->>'courseId' = $1`, [free]);
+    assert.equal(a.n, 1, 'the free enrolment is audited');
+  });
+
+  test('approving changes to a free course keeps it free', async () => {
+    const id = await publishedCourse(teacher, root, 'Stays Free');
+    await call(root, 'courses', 'setPrice', { id, price: 0 }).expect(200);
+    await call(teacher, 'courses', 'startRevision', { id }).expect(200);
+    const { sampleContent } = await import('./helpers.js');
+    const changed = sampleContent();
+    changed.sections[0].title = 'Updated section';
+    await call(teacher, 'courses', 'saveContent', { id, content: changed }).expect(200);
+    await call(teacher, 'courses', 'submit', { id }).expect(200);
+    const q = (await call(root, 'admin', 'reviewQueue')).body.queue.find((x) => x.course.id === id);
+    assert.equal(q.isRevision, true);
+    await call(root, 'admin', 'approveCourse', { versionId: q.versionId }).expect(200);
+    assert.equal((await call(root, 'courses', 'get', { id })).body.course.price, 0, 'not switched to the teacher\'s suggested price');
+  });
+
+  test('a price, when set, is at least ₦1,000, for the Admin and the teacher\'s suggestion alike', async () => {
+    const id = await publishedCourse(teacher, root, 'Minimum Price Course');
+    for (const price of [1, 500, 999, 999.99]) {
+      const r = await call(root, 'courses', 'setPrice', { id, price }).expect(400);
+      assert.match(JSON.stringify(r.body), /minimum price is 1,000/);
+    }
+    assert.equal((await call(root, 'courses', 'setPrice', { id, price: 1000 }).expect(200)).body.course.price, 100_000);
+    const { body: { id: draft } } = await call(teacher, 'courses', 'create', { title: 'Cheap Suggestion' }).expect(200);
+    await call(teacher, 'courses', 'updateMeta', { id: draft, title: 'Cheap Suggestion', suggestedPrice: 200 }).expect(400);
+    await call(teacher, 'courses', 'updateMeta', { id: draft, title: 'Cheap Suggestion', suggestedPrice: 1000 }).expect(200);
+  });
+
+  test('a free course becomes paid when the Admin sets a price; learners who joined free keep access', async () => {
+    const id = await publishedCourse(teacher, root, 'Free Then Paid');
+    await call(root, 'courses', 'setPrice', { id, price: 0 }).expect(200);
+    const early = await registerStudent('Early Joiner');
+    await call(early.a, 'learn', 'enrol', { courseId: id }).expect(200);
+    await call(root, 'courses', 'setPrice', { id, price: 3000 }).expect(200);
+    await call(early.a, 'learn', 'lesson', { courseId: id, lessonId: 'l1' }).expect(200);
+    const late = await registerStudent('Late Joiner');
+    assert.equal((await call(late.a, 'learn', 'enrol', { courseId: id }).expect(402)).body.code, 'PAYMENT_REQUIRED');
+    await buy(late, id);
+  });
+
+  test('a referral code works when enrolling in a free course', async () => {
+    const id = await publishedCourse(teacher, root, 'Free Referral Course');
+    await call(root, 'courses', 'setPrice', { id, price: 0 }).expect(200);
+    const referrer = await registerStudent('Free Referrer');
+    const code = (await call(referrer.a, 'account', 'referrals').expect(200)).body.code;
+    const s = await registerStudent('Referred For Free');
+    await call(s.a, 'learn', 'enrol', { courseId: id, referralCode: 'NOT-A-CODE' }).expect(400);
+    await call(s.a, 'learn', 'enrol', { courseId: id, referralCode: code }).expect(200);
+    const { rows: [e] } = await pool.query(`SELECT referred_by FROM enrollments WHERE course_id = $1`, [id]);
+    const { rows: [u] } = await pool.query(`SELECT id FROM users WHERE referral_code = $1`, [code]);
+    assert.equal(e.referred_by, u.id);
   });
 });
 
@@ -330,18 +384,18 @@ describe('Payments stay inside their organisation', () => {
     await callIn(OTHER_TENANT, rootB, 'payments', 'saveAccount', KEYS_B).expect(200);
     const teacherB = (await makeTeacher('Beta Teacher', rootB, OTHER_TENANT)).a;
     const idB = await publishedCourse(teacherB, rootB, 'Beta Paid Course', OTHER_TENANT);
-    await callIn(OTHER_TENANT, rootB, 'courses', 'setPrice', { id: idB, price: 700 }).expect(200);
+    await callIn(OTHER_TENANT, rootB, 'courses', 'setPrice', { id: idB, price: 1500 }).expect(200);
     const s = await registerStudent('Beta Buyer', { slug: OTHER_TENANT });
     const ref = (await callIn(OTHER_TENANT, s.a, 'payments', 'checkout', { courseId: idB }).expect(200)).body.reference;
     assert.match(ref, /^BETA-/);
-    assert.equal(paystackTestServer.request(ref).amount, 70_000);
+    assert.equal(paystackTestServer.request(ref).amount, 150_000);
     await callIn(OTHER_TENANT, s.a, 'payments', 'verify', { reference: ref }).expect(200);
 
     const listA = (await call(root, 'payments', 'list', { status: '' }).expect(200)).body;
     assert.ok(!listA.payments.some((p) => p.reference === ref), "alpha's Admin does not see beta's payments");
     const listB = (await callIn(OTHER_TENANT, rootB, 'payments', 'list').expect(200)).body;
     assert.equal(listB.payments.length, 1);
-    assert.deepEqual(listB.totals, [{ currency: 'NGN', liveMode: false, amount: 70_000, count: 1 }]);
+    assert.deepEqual(listB.totals, [{ currency: 'NGN', liveMode: false, amount: 150_000, count: 1 }]);
     // beta's payment, sent to alpha's webhook with beta's key, is refused.
     await webhook({ event: 'charge.success', data: paystackTestServer.transaction(ref) }, KEYS_B.secretKey, TENANT).expect(401);
   });

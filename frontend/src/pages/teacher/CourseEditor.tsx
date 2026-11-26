@@ -5,7 +5,7 @@ import { ContentPreview } from '../../components/ContentPreview';
 import { Learners } from '../../components/Learners';
 import { Alert, Button, ErrorState, Field, Loading, Select, StatusBadge, Tabs, TextArea, fmtDateTime, useAction, useDocumentTitle, useLoad } from '../../ui';
 import { ContentBuilder } from './ContentBuilder';
-import { formatMoney, fromMinor } from '../../money';
+import { MIN_PRICE, formatMoney, fromMinor, priceInput, priceProblem } from '../../money';
 
 export interface CourseGet {
   course: CourseMeta;
@@ -23,14 +23,14 @@ type Tab = 'details' | 'content' | 'review' | 'learners';
 function DetailsForm({ g, onSaved }: { g: CourseGet; onSaved: () => void }) {
   const c = g.course;
   const [f, setF] = useState({ title: c.title, summary: c.summary, description: c.description, outline: c.outline, category: c.category, level: c.level, language: c.language,
-    suggestedPrice: String(fromMinor(c.suggestedPrice ?? 0)) });
+    suggestedPrice: c.suggestedPrice > 0 ? String(fromMinor(c.suggestedPrice)) : '' });
   const { busy, run } = useAction();
   const locked = c.status === 'in_review' || c.status === 'archived';
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
 
   const save = (e: FormEvent) => {
     e.preventDefault();
-    void run(async () => { await api('courses', 'updateMeta', { id: c.id, ...f, suggestedPrice: Number(f.suggestedPrice) || 0 }); onSaved(); }, g.live ? 'Saved. The changes are live.' : 'Details saved');
+    void run(async () => { await api('courses', 'updateMeta', { id: c.id, ...f, suggestedPrice: priceInput(f.suggestedPrice) }); onSaved(); }, g.live ? 'Saved. The changes are live.' : 'Details saved');
   };
   return (
     <form onSubmit={save} className="panel">
@@ -48,17 +48,18 @@ function DetailsForm({ g, onSaved }: { g: CourseGet; onSaved: () => void }) {
           <Field label="Language" value={f.language} onChange={set('language')} />
         </div>
         <div className="grid-3">
-          <Field label={`Suggested price (${c.currency})`} type="number" min={1} max={10000000} step="0.01" inputMode="decimal" value={f.suggestedPrice} onChange={set('suggestedPrice')}
-            hint="What you think learners should pay. Every course is paid: required before you submit. An Admin sets the final price." />
+          <Field label={`Suggested price (${c.currency}, optional)`} type="number" min={0} max={10000000} step="0.01" inputMode="decimal" placeholder="Free"
+            value={f.suggestedPrice} onChange={set('suggestedPrice')} error={priceProblem(f.suggestedPrice, c.currency) ?? undefined}
+            hint={`What you think learners should pay: at least ${formatMoney(MIN_PRICE * 100, c.currency)}, or empty for a free course. An Admin sets the final price.`} />
           <div className="field">
             <label>Price learners pay</label>
-            <p className="field-value" data-testid="admin-price"><strong>{c.price > 0 ? formatMoney(c.price, c.currency) : 'Not set yet'}</strong>
+            <p className="field-value" data-testid="admin-price"><strong>{c.price > 0 ? formatMoney(c.price, c.currency) : g.live ? 'Free' : 'Not set yet'}</strong>
               <small className="hint">{g.live ? 'Set by an Admin.' : 'Set by an Admin when the course is approved.'}</small></p>
           </div>
         </div>
         <TextArea label="Outline: what learners will learn" rows={5} value={f.outline} onChange={set('outline')} hint="One point per line. Required before you submit." />
         <TextArea label="Description" rows={6} value={f.description} onChange={set('description')} />
-        <Button type="submit" busy={busy}>Save details</Button>
+        <Button type="submit" busy={busy} disabled={!!priceProblem(f.suggestedPrice, c.currency)}>Save details</Button>
       </fieldset>
     </form>
   );

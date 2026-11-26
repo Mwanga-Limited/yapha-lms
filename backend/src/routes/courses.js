@@ -32,7 +32,7 @@ export function courseMeta(c) {
     id: c.id, slug: c.slug, title: c.title, summary: c.summary, description: c.description, outline: c.outline, category: c.category,
     level: c.level, language: c.language, thumbnailFileId: c.thumbnail_file_id, thumbnailUrl: fileUrl(c.thumbnail_file_id),
     status: c.status, publishedAt: c.published_at, createdAt: c.created_at, updatedAt: c.updated_at, teacherId: c.teacher_id,
-    // Prices in the smallest unit (kobo…). Every course is paid: price is what learners pay (set by the Admin); 0 = not priced yet.
+    // Prices in the smallest unit (kobo…). price is what learners pay (set by the Admin); 0 = free.
     price: c.price_minor ?? 0, suggestedPrice: c.suggested_price_minor ?? 0, currency: settingsOf(currentTenant()).payments.currency,
   };
 }
@@ -73,6 +73,11 @@ async function checkContentFiles(db, teacherId, content) {
   }
 }
 
+/** Pricing is optional: 0 = free. A price, when set, is at least MIN_PRICE in the organisation's currency (e.g. 15000 = ₦15,000). */
+export const MIN_PRICE = 1000;
+export const priceSchema = z.number().min(0, 'The price cannot be negative').max(10_000_000, 'The price is too high')
+  .refine((n) => n === 0 || n >= MIN_PRICE, `The minimum price is ${MIN_PRICE.toLocaleString('en-NG')}. Leave it empty for a free course.`);
+
 const metaSchema = z.object({
   id,
   title: reqStr(200),
@@ -83,11 +88,9 @@ const metaSchema = z.object({
   level: z.enum(['beginner', 'intermediate', 'advanced']).default('beginner'),
   language: str(60).default('English'),
   thumbnailFileId: id.nullable().optional(),
-  suggestedPrice: z.number().min(0).max(10_000_000).optional(),   // the teacher's suggested price, in naira (or the organisation's currency); needed before submitting
+  suggestedPrice: priceSchema.optional(),   // the teacher's suggested price, in naira (or the organisation's currency); 0 or empty = free
 });
 const META_COLS = ['title', 'summary', 'description', 'outline', 'category', 'level', 'language', 'thumbnail_file_id', 'suggested_price_minor'];
-/** Every course is paid. The Admin sets the price learners pay, in the organisation's currency (e.g. 15000 = ₦15,000). */
-export const priceSchema = z.number().positive('Every course needs a price above 0').max(10_000_000, 'The price is too high');
 
 export const courseRoutes = actionEndpoint({
   // ------------------------------------------------------------- public catalogue
@@ -97,8 +100,7 @@ export const courseRoutes = actionEndpoint({
     run: async ({ data }) => {
       const q = likeEscape(data.q);
       const params = [q, data.category, data.level, PAGE_SIZE, (data.page - 1) * PAGE_SIZE];
-      // Every course is paid: a course without a price (published before prices existed) stays out of the catalogue.
-      const where = `c.status = 'published' AND c.price_minor > 0
+      const where = `c.status = 'published'
         AND ($1 = '' OR c.title ILIKE '%'||$1||'%' OR c.summary ILIKE '%'||$1||'%' OR c.category ILIKE '%'||$1||'%' OR u.name ILIKE '%'||$1||'%')
         AND ($2 = '' OR c.category = $2) AND ($3 = '' OR c.level = $3)`;
       const [list, total, cats] = await Promise.all([
@@ -107,7 +109,7 @@ export const courseRoutes = actionEndpoint({
                  FROM courses c JOIN users u ON u.id = c.teacher_id JOIN course_versions v ON v.id = c.live_version_id
                 WHERE ${where} ORDER BY c.published_at DESC NULLS LAST LIMIT $4 OFFSET $5`, params),
         query(`SELECT count(*)::int AS n FROM courses c JOIN users u ON u.id = c.teacher_id WHERE ${where}`, params.slice(0, 3)),
-        query(`SELECT DISTINCT category FROM courses WHERE status = 'published' AND price_minor > 0 AND category <> '' ORDER BY category`),
+        query(`SELECT DISTINCT category FROM courses WHERE status = 'published' AND category <> '' ORDER BY category`),
       ]);
       return {
         courses: list.rows.map((c) => ({
@@ -319,7 +321,7 @@ export const courseRoutes = actionEndpoint({
     }),
   },
 
-  /** The Admin sets the price learners pay (above 0: every course is paid), before or after publishing. Learners who already have access keep it. */
+  /** The Admin sets the price learners pay (0 = free, otherwise at least MIN_PRICE), before or after publishing. Learners who already have access keep it. */
   setPrice: {
     auth: ['admin'],
     schema: z.object({ id, price: priceSchema }),
@@ -332,7 +334,7 @@ export const courseRoutes = actionEndpoint({
       const { currency } = courseMeta(u);
       await audit(db, ctx, { action: 'course.price_set', targetType: 'course', targetId: c.id, oldValues: { price: c.price_minor, currency }, newValues: { price, currency } });
       await notify(db, c.teacher_id, { type: 'course', title: `Price updated: ${c.title}`,
-        body: `Learners now pay ${formatMoney(price, currency)}.`, link: `/teach/courses/${c.id}` });
+        body: price > 0 ? `Learners now pay ${formatMoney(price, currency)}.` : 'This course is now free.', link: `/teach/courses/${c.id}` });
       return { course: courseMeta(u) };
     }),
   },
@@ -344,7 +346,6 @@ export const courseRoutes = actionEndpoint({
     run: async (ctx) => tx(async (db) => {
       const c = await manageable(db, ctx, ctx.data.id, { allowAdmin: true, lock: true });
       if (!c.live_version_id || !['approved', 'unpublished'].includes(c.status)) fail(409, 'Only an approved course can be published');
-      if (c.price_minor <= 0) fail(409, 'An Admin must set a price before this course can be published', { code: 'PRICE_REQUIRED' });
       await setStatus(db, ctx, c, 'published', 'course.publish', ', published_at = coalesce(published_at, now())');
       return { ok: true };
     }),

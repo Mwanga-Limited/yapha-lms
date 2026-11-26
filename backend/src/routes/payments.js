@@ -34,7 +34,7 @@ export const paymentRoutes = actionEndpoint({
       const { rows: [c] } = await query(`SELECT * FROM courses WHERE id = $1`, [ctx.data.courseId]);
       if (!c) notFound('Course');
       if (c.status !== 'published') fail(409, 'This course is not open for enrolment');
-      if (c.price_minor <= 0) fail(409, 'This course is not available yet: it has no price', { code: 'NOT_PRICED' });
+      if (c.price_minor <= 0) fail(409, 'This course is free: enrol without paying', { code: 'FREE_COURSE' });
       const { rows: [e] } = await query(`SELECT 1 FROM enrollments WHERE user_id = $1 AND course_id = $2 AND status = 'active'`, [ctx.user.id, c.id]);
       if (e) fail(409, 'You already have access to this course', { code: 'ALREADY_ENROLLED' });
       const referrer = await findReferrer({ query }, ctx.data.referralCode, ctx.user.id);
