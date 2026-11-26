@@ -120,13 +120,13 @@ The token for `verifyEmail` / `resetPassword` is the part after `token=` in the 
 |---|---|---|---|
 | `mine` | `{}` | 200, your courses with status | Student → 403 |
 | `create` | `{ "title": "Algebra Basics" }` | 200, `id` (keep it as `courseId`) | |
-| `get` | `{ "id": "<courseId>" }` | 200, details, live and draft content, problems, review history | Another teacher's course → 403 |
-| `updateMeta` | see **Body A** below | 200 | While in review → 409 |
+| `get` | `{ "id": "<courseId>" }` | 200, details, live and draft content (`draft.details`: a revision's changed details, or `null`), problems, review history | Another teacher's course → 403 |
+| `updateMeta` | see **Body A** below | 200. On a course with an approved version the changes are saved on its revision (started automatically) and go live only when an Admin approves it: the reply has `awaitingApproval: true` and the pending `details`. Teacher of the course or Admin. Audited as `course.edit`. | While in review → 409 |
 | `saveContent` | see **Body B** below | 200, `problems` = `[]` when complete | While in review → 409 |
 | `submit` | `{ "id": "<courseId>" }` | 200, status `in_review` | Empty course → 422 with `problems` (CR-01). Unverified email → 403. |
 | `publish` | `{ "id": "<courseId>" }` | 200 after Admin approval | Before approval → 409 (CR-02) |
 | `unpublish` | `{ "id": "<courseId>" }` | 200; hidden from catalogue, learners keep access (CR-05) | |
-| `startRevision` | `{ "id": "<courseId>" }` | 200; creates an editable copy of a published course (CR-04) | |
+| `startRevision` | `{ "id": "<courseId>" }` | 200; creates an editable copy of a published course (CR-04). Teacher of the course or Admin. | |
 | `discardRevision` | `{ "id": "<courseId>" }` | 200; throws the copy away | |
 | `archive` | `{ "id": "<courseId>" }` | 200 | |
 | `remove` | `{ "id": "<courseId>" }` | 200 only for a never-reviewed draft | With enrolments or review history → 409 (CR-05) |

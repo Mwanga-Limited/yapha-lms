@@ -4,7 +4,7 @@ import { Empty, Loading, fmtDateTime, plural, useDocumentTitle, useLoad } from '
 import { AdminNav } from './Dashboard';
 import { formatMoney } from '../../money';
 
-interface QueueItem { versionId: string; versionNo: number; submittedAt: string; isRevision: boolean; course: CourseMeta; teacherName: string; teacherEmail: string; rejections: number; lessonCount: number; quizCount: number }
+interface QueueItem { versionId: string; versionNo: number; submittedAt: string; isRevision: boolean; detailsChanged?: boolean; course: CourseMeta; teacherName: string; teacherEmail: string; rejections: number; lessonCount: number; quizCount: number }
 
 export function AdminReviews() {
   useDocumentTitle('Course reviews');
@@ -25,6 +25,7 @@ export function AdminReviews() {
               </div>
               <div className="queue-tags">
                 {q.isRevision ? <span className="badge badge-in_review">Revision of a live course</span> : <span className="badge badge-draft">New course</span>}
+                {q.detailsChanged && <span className="badge badge-draft">Details changed</span>}
                 {q.rejections > 0 && <span className="badge badge-rejected">{plural(q.rejections, 'earlier rejection')}</span>}
                 <span className="muted small">{plural(q.lessonCount, 'lesson')}, {plural(q.quizCount, 'quiz')}</span>
                 {!q.isRevision && <span className="muted small">Suggested price: {formatMoney(q.course.suggestedPrice, q.course.currency, { unset: 'none' })}</span>}

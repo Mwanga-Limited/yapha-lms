@@ -4,7 +4,7 @@ import { api } from '../../api';
 import { ContentPreview } from '../../components/ContentPreview';
 import { Learners } from '../../components/Learners';
 import { Alert, Button, ErrorState, Field, Loading, ReasonModal, StatusBadge, Tabs, TextArea, fmtDateTime, levelLabel, useAction, useDocumentTitle, useLoad, useToast } from '../../ui';
-import { CourseActions, type CourseGet } from '../teacher/CourseEditor';
+import { CourseActions, type CourseDetails, type CourseGet } from '../teacher/CourseEditor';
 import { AdminNav } from './Dashboard';
 import { formatMoney, fromMinor } from '../../money';
 import type { CourseMeta } from '../../api';
@@ -27,6 +27,27 @@ function PriceEditor({ c, reload }: { c: CourseMeta; reload: () => Promise<void>
         <Button type="submit" busy={busy} disabled={!changed || price === ''}>Save price</Button>
       </form>
     </section>
+  );
+}
+
+const DETAIL_LABELS: [keyof CourseDetails, string][] = [
+  ['title', 'Title'], ['summary', 'Summary'], ['category', 'Category'], ['level', 'Level'], ['language', 'Language'],
+  ['outline', 'Outline'], ['description', 'Description'], ['thumbnailFileId', 'Thumbnail'],
+];
+
+/** A revision's changes to the course details, next to the live ones, so the Admin sees exactly what they approve. */
+function DetailChanges({ live, proposed }: { live: CourseMeta; proposed: CourseDetails }) {
+  const rows = DETAIL_LABELS.filter(([k]) => (live[k] ?? '') !== (proposed[k] ?? ''));
+  if (!rows.length) return null;
+  const show = (k: keyof CourseDetails, v: CourseDetails) => (k === 'thumbnailFileId' ? (v.thumbnailUrl ? <img src={v.thumbnailUrl} alt="" className="thumb-sm" /> : 'None') : String(v[k] ?? '') || '—');
+  return (
+    <div className="detail-changes" data-testid="detail-changes">
+      <h3>Changed details</h3>
+      <table className="table">
+        <thead><tr><th>Field</th><th>Live now</th><th>After approval</th></tr></thead>
+        <tbody>{rows.map(([k, label]) => <tr key={k}><td>{label}</td><td className="muted">{show(k, live)}</td><td><strong>{show(k, proposed)}</strong></td></tr>)}</tbody>
+      </table>
+    </div>
   );
 }
 
@@ -61,7 +82,10 @@ export function AdminCourse() {
           <div className="row-gap"><StatusBadge status={c.status} />{g.draft && g.live && <span className="badge badge-in_review">Revision {g.draft.versionNo}: {g.draft.status.replace('_', ' ')}</span>}
             <span className="muted small">by {g.teacher.name} ({g.teacher.email}) · {g.enrollments} enrolled</span></div>
         </div>
-        <CourseActions g={g} reload={reload} />
+        <div className="row-gap">
+          {c.status !== 'archived' && !inReview && <Link className="btn btn-secondary" to={`/teach/courses/${c.id}`}>Edit course</Link>}
+          <CourseActions g={g} reload={reload} />
+        </div>
       </div>
 
       {inReview && (
@@ -70,6 +94,7 @@ export function AdminCourse() {
             <h2>{g.live ? `Revision ${g.draft!.versionNo} of a live course` : 'New course'} submitted {fmtDateTime(g.draft!.submittedAt)}</h2>
             <p className="muted">{g.live ? 'Items marked New or Changed differ from the live version. If you approve, this version replaces it for every learner.' : 'If you approve, the teacher can publish it to the catalog.'}</p>
             {g.problems.length > 0 && <Alert tone="warn" title="Automatic checks found issues">{g.problems.join('; ')}</Alert>}
+            {g.live && g.draft?.details && <DetailChanges live={c} proposed={g.draft.details} />}
           </div>
           <div className="decision-actions">
             {newInReview && (

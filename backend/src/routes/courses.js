@@ -53,6 +53,34 @@ async function draftVersion(db, course, lock = false) {
   return rows[0] ?? null;
 }
 
+/** A new revision of an approved course, starting from its live content. Learners keep the live version until it is approved. */
+async function createRevision(db, ctx, course) {
+  const { rows: [live] } = await db.query(`SELECT content FROM course_versions WHERE id = $1`, [course.live_version_id]);
+  const { rows: [{ n }] } = await db.query(`SELECT coalesce(max(version_no), 0) + 1 AS n FROM course_versions WHERE course_id = $1`, [course.id]);
+  const { rows: [v] } = await db.query(`INSERT INTO course_versions (course_id, version_no, content) VALUES ($1,$2,$3) RETURNING *`, [course.id, n, live.content]);
+  await db.query(`UPDATE courses SET draft_version_id = $2, updated_at = now() WHERE id = $1`, [course.id, v.id]);
+  await audit(db, ctx, { action: 'course.revision_start', targetType: 'course', targetId: course.id, newValues: { versionNo: n } });
+  return v;
+}
+
+// ------------------------------------------------------------- details of a published course (held on the revision until approved)
+/** The course's current details, as stored on the course. */
+export const detailsOf = (c) => Object.fromEntries(META_COLS.map((k) => [k, c[k] ?? null]));
+/** The details a revision will apply when approved: its changed details, else the course's current ones. */
+export const pendingDetails = (course, version) => ({ ...detailsOf(course), ...(version?.meta ?? {}) });
+/** Only the details that differ, as { old, new } pairs (for the audit log and the reviewer). */
+export function detailChanges(from, to) {
+  const oldV = {}, newV = {};
+  for (const k of META_COLS) if (String(from[k] ?? '') !== String(to[k] ?? '')) { oldV[k] = from[k] ?? null; newV[k] = to[k] ?? null; }
+  return { oldV, newV, changed: Object.keys(newV).length > 0 };
+}
+/** Details in the API's shape (camelCase, prices in the smallest unit). */
+export const detailsView = (m) => ({
+  title: m.title, summary: m.summary ?? '', description: m.description ?? '', outline: m.outline ?? '', category: m.category ?? '',
+  level: m.level, language: m.language, thumbnailFileId: m.thumbnail_file_id ?? null, thumbnailUrl: fileUrl(m.thumbnail_file_id),
+  suggestedPrice: m.suggested_price_minor ?? 0,
+});
+
 async function setStatus(db, ctx, course, status, action, extra = '') {
   const { rows } = await db.query(`UPDATE courses SET status = $2, updated_at = now() ${extra} WHERE id = $1 RETURNING *`, [course.id, status]);
   await audit(db, ctx, { action, targetType: 'course', targetId: course.id, oldValues: { status: course.status }, newValues: { status } });
@@ -60,10 +88,10 @@ async function setStatus(db, ctx, course, status, action, extra = '') {
 }
 
 /** Lesson files must belong to the course's teacher; file names come from the server. */
-async function checkContentFiles(db, teacherId, content) {
+async function checkContentFiles(db, ownerIds, content) {
   const ids = [...new Set(lessonsOf(content).map((l) => l.fileId).filter(Boolean))];
   if (!ids.length) return;
-  const { rows } = await db.query(`SELECT id, original_name, purpose FROM files WHERE id = ANY($1) AND owner_id = $2 AND status = 'ready'`, [ids, teacherId]);
+  const { rows } = await db.query(`SELECT id, original_name, purpose FROM files WHERE id = ANY($1) AND owner_id = ANY($2) AND status = 'ready'`, [ids, ownerIds]);
   const byId = new Map(rows.map((r) => [r.id, r]));
   for (const s of content.sections) for (const it of s.items) {
     if (it.kind !== 'lesson' || !it.fileId) continue;
@@ -212,26 +240,55 @@ export const courseRoutes = actionEndpoint({
         teacher: teacher.rows[0],
         enrollments: learners.rows[0].n,
         live: live.rows[0] ? { id: live.rows[0].id, versionNo: live.rows[0].version_no, content: live.rows[0].content, reviewedAt: live.rows[0].reviewed_at } : null,
-        draft: d ? { id: d.id, versionNo: d.version_no, status: d.status, content: d.content, submittedAt: d.submitted_at, updatedAt: d.updated_at } : null,
-        problems: d ? submissionProblems(c, d.content) : [],
+        draft: d ? { id: d.id, versionNo: d.version_no, status: d.status, content: d.content, submittedAt: d.submitted_at, updatedAt: d.updated_at,
+          // A revision of a published course: the details it will apply when approved (null = it doesn't change them).
+          details: d.meta && c.live_version_id ? detailsView(pendingDetails(c, d)) : null } : null,
+        problems: d ? submissionProblems({ ...c, ...pendingDetails(c, d) }, d.content) : [],
         reviews: reviews.rows.map((r) => ({ id: r.id, versionNo: r.version_no, decision: r.decision, reason: r.reason, adminName: r.admin_name, createdAt: r.created_at })),
       };
     },
   },
 
-  /** Minor edits (title, description, outline…) go live immediately (spec 1.2). */
+  /**
+   * Course details (title, summary, outline…), by the course's teacher or an Admin.
+   * Before the first approval they are saved on the course. Once the course has an approved version, they are saved on its
+   * revision (started automatically) and only reach learners when an Admin approves it. Every change is audited (course.edit).
+   */
   updateMeta: {
     auth: ['teacher', 'admin'],
     schema: metaSchema,
     run: async (ctx) => tx(async (db) => {
-      const c = await manageable(db, ctx, ctx.data.id, { lock: true });
+      const c = await manageable(db, ctx, ctx.data.id, { allowAdmin: true, lock: true });
       if (c.status === 'archived') fail(409, 'Archived courses cannot be edited');
       if (c.status === 'in_review') fail(409, 'This course is being reviewed. You can edit it again after the decision.');
       const d = ctx.data;
       if (d.thumbnailFileId) {
-        const f = await db.query(`SELECT 1 FROM files WHERE id = $1 AND owner_id = $2 AND purpose = 'thumbnail' AND status = 'ready'`, [d.thumbnailFileId, ctx.user.id]);
+        const f = await db.query(`SELECT 1 FROM files WHERE id = $1 AND owner_id = ANY($2) AND purpose = 'thumbnail' AND status = 'ready'`, [d.thumbnailFileId, [ctx.user.id, c.teacher_id]]);
         if (!f.rowCount) fail(400, 'Upload the thumbnail first');
       }
+
+      if (c.live_version_id) {
+        // A published (or approved) course: the change waits on the revision for an Admin's approval.
+        let v = await draftVersion(db, c, true);
+        if (v?.status === 'in_review') fail(409, 'Your changes are being reviewed. You can edit the course again after the decision.');
+        if (!v) v = await createRevision(db, ctx, c);
+        const before = pendingDetails(c, v);
+        const after = {
+          title: d.title, summary: d.summary, description: d.description, outline: d.outline, category: d.category, level: d.level, language: d.language,
+          thumbnail_file_id: d.thumbnailFileId === undefined ? before.thumbnail_file_id : d.thumbnailFileId,
+          suggested_price_minor: d.suggestedPrice === undefined ? before.suggested_price_minor : toMinor(d.suggestedPrice),
+        };
+        const edit = detailChanges(before, after);
+        if (edit.changed) {
+          const meta = detailChanges(detailsOf(c), after).changed ? after : null;   // back to the live details = nothing to apply
+          await db.query(`UPDATE course_versions SET meta = $2, updated_at = now() WHERE id = $1`, [v.id, meta]);
+          await db.query(`UPDATE courses SET updated_at = now() WHERE id = $1`, [c.id]);
+          await audit(db, ctx, { action: 'course.edit', targetType: 'course', targetId: c.id, oldValues: edit.oldV,
+            newValues: { ...edit.newV, versionNo: v.version_no, awaitingApproval: true } });
+        }
+        return { course: courseMeta(c), details: detailsView(after), awaitingApproval: true };
+      }
+
       const values = [d.title, d.summary, d.description, d.outline, d.category, d.level, d.language,
         d.thumbnailFileId === undefined ? c.thumbnail_file_id : d.thumbnailFileId,
         d.suggestedPrice === undefined ? c.suggested_price_minor : toMinor(d.suggestedPrice)];
@@ -239,9 +296,8 @@ export const courseRoutes = actionEndpoint({
         `UPDATE courses SET title=$2, summary=$3, description=$4, outline=$5, category=$6, level=$7, language=$8, thumbnail_file_id=$9,
                 suggested_price_minor=$10, updated_at=now()
           WHERE id = $1 RETURNING *`, [c.id, ...values]);
-      const oldV = {}, newV = {};
-      for (const k of META_COLS) if (String(c[k] ?? '') !== String(u[k] ?? '')) { oldV[k] = c[k]; newV[k] = u[k]; }
-      if (Object.keys(newV).length) await audit(db, ctx, { action: c.live_version_id ? 'course.minor_edit_live' : 'course.update', targetType: 'course', targetId: c.id, oldValues: oldV, newValues: newV });
+      const edit = detailChanges(c, u);
+      if (edit.changed) await audit(db, ctx, { action: 'course.update', targetType: 'course', targetId: c.id, oldValues: edit.oldV, newValues: edit.newV });
       return { course: courseMeta(u) };
     }),
   },
@@ -251,13 +307,13 @@ export const courseRoutes = actionEndpoint({
     auth: ['teacher', 'admin'],
     schema: z.object({ id, content: z.unknown() }),
     run: async (ctx) => tx(async (db) => {
-      const c = await manageable(db, ctx, ctx.data.id, { lock: true });
+      const c = await manageable(db, ctx, ctx.data.id, { allowAdmin: true, lock: true });
       const v = await draftVersion(db, c, true);
       if (!v) fail(409, c.live_version_id ? 'Start a new revision before changing lessons, quizzes or the completion rule' : 'No draft to edit');
       if (!['draft', 'rejected'].includes(v.status)) fail(409, 'This version is under review and cannot be changed');
       let content;
       try { content = normaliseContent(ctx.data.content); } catch (e) { fail(400, e.issues?.[0] ? `${e.issues[0].path.join('.')}: ${e.issues[0].message}` : e.message); }
-      await checkContentFiles(db, c.teacher_id, content);
+      await checkContentFiles(db, [c.teacher_id, ctx.user.id], content);
       await db.query(`UPDATE course_versions SET content = $2, updated_at = now() WHERE id = $1`, [v.id, content]);
       await db.query(`UPDATE courses SET updated_at = now() WHERE id = $1`, [c.id]);
       const sum = (x) => ({ sections: x.sections.length, lessons: lessonsOf(x).length, quizzes: quizzesOf(x).length, required: x.completion.lessons.length + x.completion.quizzes.length });
@@ -270,15 +326,11 @@ export const courseRoutes = actionEndpoint({
     auth: ['teacher', 'admin'],
     schema: z.object({ id }),
     run: async (ctx) => tx(async (db) => {
-      const c = await manageable(db, ctx, ctx.data.id, { lock: true });
+      const c = await manageable(db, ctx, ctx.data.id, { allowAdmin: true, lock: true });
       if (!c.live_version_id) fail(409, 'This course has no approved version yet');
       if (c.draft_version_id) fail(409, 'A revision already exists');
       if (c.status === 'archived') fail(409, 'Archived courses cannot be edited');
-      const { rows: [live] } = await db.query(`SELECT content FROM course_versions WHERE id = $1`, [c.live_version_id]);
-      const { rows: [{ n }] } = await db.query(`SELECT coalesce(max(version_no), 0) + 1 AS n FROM course_versions WHERE course_id = $1`, [c.id]);
-      const { rows: [v] } = await db.query(`INSERT INTO course_versions (course_id, version_no, content) VALUES ($1,$2,$3) RETURNING id`, [c.id, n, live.content]);
-      await db.query(`UPDATE courses SET draft_version_id = $2, updated_at = now() WHERE id = $1`, [c.id, v.id]);
-      await audit(db, ctx, { action: 'course.revision_start', targetType: 'course', targetId: c.id, newValues: { versionNo: n } });
+      await createRevision(db, ctx, c);
       return { ok: true };
     }),
   },
@@ -287,7 +339,7 @@ export const courseRoutes = actionEndpoint({
     auth: ['teacher', 'admin'],
     schema: z.object({ id }),
     run: async (ctx) => tx(async (db) => {
-      const c = await manageable(db, ctx, ctx.data.id, { lock: true });
+      const c = await manageable(db, ctx, ctx.data.id, { allowAdmin: true, lock: true });
       const v = await draftVersion(db, c, true);
       if (!v || !c.live_version_id) fail(409, 'There is no revision to discard');
       if (v.status === 'in_review') fail(409, 'This revision is being reviewed');
@@ -304,16 +356,16 @@ export const courseRoutes = actionEndpoint({
     verified: true,
     schema: z.object({ id }),
     run: async (ctx) => tx(async (db) => {
-      const c = await manageable(db, ctx, ctx.data.id, { lock: true });
+      const c = await manageable(db, ctx, ctx.data.id, { allowAdmin: true, lock: true });
       if (c.status === 'archived') fail(409, 'Archived courses cannot be submitted');
       const v = await draftVersion(db, c, true);
       if (!v || !['draft', 'rejected'].includes(v.status)) fail(409, 'Nothing to submit');
-      const problems = submissionProblems(c, v.content);
+      const problems = submissionProblems({ ...c, ...pendingDetails(c, v) }, v.content);
       if (problems.length) fail(422, 'The course is not ready to submit', { problems });
       await db.query(`UPDATE course_versions SET status = 'in_review', submitted_at = now(), updated_at = now() WHERE id = $1`, [v.id]);
       if (!c.live_version_id) await db.query(`UPDATE courses SET status = 'in_review', updated_at = now() WHERE id = $1`, [c.id]);
       await audit(db, ctx, { action: v.status === 'rejected' ? 'course.resubmit' : 'course.submit', targetType: 'course', targetId: c.id,
-        oldValues: { status: c.status, versionStatus: v.status }, newValues: { versionNo: v.version_no, revision: !!c.live_version_id } });
+        oldValues: { status: c.status, versionStatus: v.status }, newValues: { versionNo: v.version_no, revision: !!c.live_version_id, detailsChanged: !!v.meta } });
       await notifyAdmins(db, { type: 'review', title: c.live_version_id ? 'Course revision to review' : 'Course to review', body: c.title, link: '/admin/reviews' });
       return { ok: true };
     }),
